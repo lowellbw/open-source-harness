@@ -21,6 +21,15 @@ importers:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@22.20.1)(lightningcss@1.32.0)
 
+  apps/sidecar:
+    dependencies:
+      '@workspace/web':
+        specifier: workspace:*
+        version: link:../web
+      next:
+        specifier: ^16.3.3
+        version: 16.3.3(@types/node@22.20.1)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+
   apps/web:
     dependencies:
       '@workspace/core':

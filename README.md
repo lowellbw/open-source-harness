@@ -66,6 +66,7 @@ A full live pass costs well under a cent — it runs on the cheapest tier under 
 | `packages/session` | Session lifecycle, agent toolset, approval gate, connector bring-up. Shared by every shell. |
 | `packages/mcp` | MCP client, tool-description pinning, deferred loading. |
 | `apps/web` | The workspace you open. |
+| `apps/sidecar` | Node process the Mac shell launches. Serves the same app; token-gated loopback. |
 | `apps/mac-shell` | Swift shell — **source only, never compiled.** See its README. |
 
 ## Known limits
