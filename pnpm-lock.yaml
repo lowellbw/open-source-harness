@@ -18,6 +18,24 @@ importers:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@22.20.1)
 
+  packages/core:
+    dependencies:
+      '@workspace/gateway-model':
+        specifier: workspace:*
+        version: link:../gateway-model
+      '@workspace/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+      '@workspace/workspace':
+        specifier: workspace:*
+        version: link:../workspace
+      ai:
+        specifier: ^7.0.79
+        version: 7.0.79(zod@3.25.76)
+      zod:
+        specifier: ^3.25.76
+        version: 3.25.76
+
   packages/gateway-model:
     dependencies:
       '@openrouter/ai-sdk-provider':

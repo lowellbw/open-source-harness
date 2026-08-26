@@ -12,6 +12,7 @@ export default defineConfig({
       '@workspace/protocol': src('protocol'),
       '@workspace/workspace': src('workspace'),
       '@workspace/gateway-model': src('gateway-model'),
+      '@workspace/core': src('core'),
     },
   },
   test: {
