@@ -22,8 +22,9 @@ workspace, and its conformance tests skip rather than fail.
 ## What works today
 
 - **Chat with streaming**, tool calls shown inline, reasoning collapsible.
-- **A real workspace** — upload, read, write, download, and shell commands, all confined to
-  the workspace root.
+- **A real toolset** — list, read, write, *surgical edit*, grep, glob, shell commands and web
+  fetch, all confined to the workspace root. Edits snapshot the original first, so they are
+  undoable and therefore do not interrupt you to ask.
 - **Model choice** across Anthropic, OpenAI and Google, picked by alias rather than provider
   model ID, with per-role gating and a cheap always-available floor.
 - **A live cost meter**, four buckets, priced per model, with a hard spend ceiling enforced in
@@ -43,7 +44,7 @@ Copy `apps/web/mcp.config.example.json` to `apps/web/mcp.config.json` to connect
 ## Tests
 
 ```bash
-pnpm test          # 188 tests; Docker conformance skips if the daemon is absent
+pnpm test          # 215 tests; Docker conformance skips if the daemon is absent
 pnpm -r typecheck
 ```
 

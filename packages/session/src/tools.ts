@@ -3,6 +3,10 @@ import { z } from 'zod'
 import type { WorkspaceEvent } from '@workspace/protocol'
 import type { Workspace } from '@workspace/workspace'
 import type { ApprovalGate } from './approvals.js'
+import { buildEditTools } from './tools-edit.js'
+import { buildSearchTools } from './tools-search.js'
+import { buildWebTools } from './tools-web.js'
+import { snapshot } from './checkpoints.js'
 
 /**
  * The agent's built-in workspace tools.
@@ -13,7 +17,18 @@ import type { ApprovalGate } from './approvals.js'
  * to be wrong.
  */
 
-export const BUILTIN_TOOL_NAMES = ['listFiles', 'readFile', 'writeFile', 'runCommand'] as const
+export const BUILTIN_TOOL_NAMES = [
+  'listFiles',
+  'readFile',
+  'writeFile',
+  'runCommand',
+  'editFile',
+  'restoreFile',
+  'listCheckpoints',
+  'searchFiles',
+  'findFiles',
+  'fetchUrl',
+] as const
 
 export interface ToolContext {
   workspace: Workspace
@@ -29,6 +44,10 @@ export function buildWorkspaceTools(ctx: ToolContext): ToolSet {
   const commandTimeout = ctx.commandTimeoutMs ?? 60_000
 
   return {
+    ...buildEditTools({ workspace: ctx.workspace, emit: ctx.emit }),
+    ...buildSearchTools({ workspace: ctx.workspace }),
+    ...buildWebTools(),
+
     listFiles: tool({
       description: 'List files and directories in the workspace at a given path.',
       inputSchema: z.object({ path: z.string().describe('Workspace path, e.g. "/"') }),
@@ -56,6 +75,10 @@ export function buildWorkspaceTools(ctx: ToolContext): ToolSet {
             bytes: contents.length,
           })
           if (decision === 'deny') return { ok: false, reason: 'Denied by user' }
+
+          // Snapshot even though the user approved. Approval means "yes, go
+          // ahead", not "yes, and I accept never getting it back".
+          await snapshot(ctx.workspace, path)
         }
 
         await ctx.workspace.write(path, contents)

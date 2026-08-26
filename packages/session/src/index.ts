@@ -18,3 +18,14 @@ export {
   type Session,
   type SessionManagerConfig,
 } from './manager.js'
+
+export { buildEditTools, type EditToolContext } from './tools-edit.js'
+export { buildSearchTools, type SearchToolContext } from './tools-search.js'
+export { buildWebTools, type WebToolContext } from './tools-web.js'
+export {
+  snapshot,
+  restore,
+  listCheckpoints,
+  CHECKPOINT_DIR,
+  type Checkpoint,
+} from './checkpoints.js'

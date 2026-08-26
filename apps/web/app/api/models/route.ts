@@ -21,6 +21,11 @@ export async function GET(req: Request) {
     models: available.map((m) => ({
       alias: m.alias,
       tier: m.tier,
+      // §6.2 hides provider IDs from end users so an admin can repoint an alias
+      // without retraining anyone. The person running this locally IS the
+      // admin, and needs to know what is actually being called.
+      upstreamModel: m.upstreamModel,
+      provider: m.provider,
       contextWindow: m.contextWindow,
       inputPerMtok: m.rates.inputPerMtok,
       outputPerMtok: m.rates.outputPerMtok,

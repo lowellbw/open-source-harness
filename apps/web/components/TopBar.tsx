@@ -7,6 +7,11 @@ export interface ModelInfo {
   inputPerMtok: number
   outputPerMtok: number
   isFloor: boolean
+  /** The provider's own ID. Hidden from end users by §6.2; shown here because
+   *  whoever is running this locally is the admin and needs to know what is
+   *  actually being called. */
+  upstreamModel?: string
+  provider?: string
 }
 
 const LABELS: Record<string, string> = {
@@ -53,12 +58,17 @@ export function TopBar(props: {
       </label>
 
       {active && (
-        // Users pick aliases; the price is shown so the choice is informed
-        // without exposing provider model IDs (§6.2).
-        <span className="muted hidden text-[12px] lg:inline">
-          ${active.inputPerMtok.toFixed(2)} in / ${active.outputPerMtok.toFixed(2)} out per Mtok
-          {' · '}
-          {(active.contextWindow / 1000).toFixed(0)}k context
+        <span className="muted hidden items-baseline gap-2 text-[12px] lg:inline-flex">
+          {active.upstreamModel && (
+            <span className="mono" title="The provider model behind this alias">
+              {active.upstreamModel}
+            </span>
+          )}
+          <span>
+            ${active.inputPerMtok.toFixed(2)} in / ${active.outputPerMtok.toFixed(2)} out per Mtok
+            {' · '}
+            {(active.contextWindow / 1000).toFixed(0)}k context
+          </span>
         </span>
       )}
 
