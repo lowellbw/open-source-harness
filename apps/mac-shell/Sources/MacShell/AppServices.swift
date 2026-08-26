@@ -15,6 +15,15 @@ final class AppServices: ObservableObject {
     let sidecar: SidecarController
     let keychain: KeychainStore
 
+    /// The transcript, the file tree and the connector list — everything derived from
+    /// the sidecar's event stream. Owned here rather than in a `@StateObject` for the
+    /// same reason the sidecar is: the menu bar acts on it, and menu commands get no
+    /// view environment.
+    let conversation: ConversationStore
+
+    /// Conversations on disk, and the list the source list renders.
+    let sessions: SessionLibrary
+
     /// `~/Library/Application Support/<bundle id>/`. Everything the shell writes
     /// lives under here so an uninstall is one `rm -rf`.
     let dataDirectory: URL
@@ -27,6 +36,11 @@ final class AppServices: ObservableObject {
     /// rather than a side channel (NotificationCenter, a delegate, a shared web view
     /// reference) that has to be torn down by hand.
     @Published private(set) var reloadNonce: UInt64 = 0
+
+    /// Bumped by the Focus Composer command. The composer compares it against the
+    /// value it last acted on, which turns "put the caret in the input" into ordinary
+    /// SwiftUI state rather than a side channel that has to be torn down by hand.
+    @Published private(set) var composerFocusNonce: UInt64 = 0
 
     private let log = Logger(subsystem: AppInfo.subsystem, category: "services")
 
@@ -42,6 +56,10 @@ final class AppServices: ObservableObject {
         let keychain = KeychainStore(service: AppInfo.bundleIdentifier)
         self.keychain = keychain
         sidecar = SidecarController(dataDirectory: base, keychain: keychain)
+
+        let sessions = SessionLibrary(dataDirectory: base)
+        self.sessions = sessions
+        conversation = ConversationStore(library: sessions)
     }
 
     func start() {
@@ -53,14 +71,31 @@ final class AppServices: ObservableObject {
             log.error("Could not create workspace root \(self.workspaceRoot.path, privacy: .public): \(error.localizedDescription, privacy: .public)")
         }
         sidecar.start()
+
+        // Open the most recent conversation, or start one. A shell that launches to
+        // an empty screen with a full history one click away is just a worse shell.
+        if let latest = sessions.sessions.first {
+            conversation.open(latest)
+        } else {
+            conversation.startNewSession()
+        }
     }
 
     func shutdown() {
+        // Archive before the sidecar goes away: this is the last moment anything can
+        // be written, and the transcript is the only part of a session that is ours
+        // to keep.
+        conversation.persist()
         sidecar.stopBlocking(timeout: 2.0)
     }
 
     func requestReload() {
         reloadNonce &+= 1
+        Task { await conversation.refreshAll() }
+    }
+
+    func focusComposer() {
+        composerFocusNonce &+= 1
     }
 
     func restartSidecar() {

@@ -67,6 +67,13 @@ enum SandboxExec {
     ;; the cache lives in a cryptex under /System/Volumes/Preboot, which (subpath
     ;; "/System") already covers.
     (allow file-read*
+        ;; The root directory itself, not a subpath of it. dyld opens "/" while
+        ;; resolving the shared cache, and (subpath "/System") does not imply read
+        ;; access to the directory "/System" hangs off. Without this literal every
+        ;; command dies at exec with SIGABRT and no message, because the process is
+        ;; killed before it has a stderr worth writing to. It grants a listing of the
+        ;; top level and nothing under it.
+        (literal "/")
         (subpath "/System")
         (subpath "/usr/lib")
         (subpath "/usr/share")
