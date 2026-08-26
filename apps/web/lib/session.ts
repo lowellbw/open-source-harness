@@ -83,8 +83,13 @@ export const defaultPolicy: OrgPolicy = {
  * open because one connector is unreachable is worse than one that opens
  * without it. Failures are collected and surfaced, not thrown.
  */
-async function initMcp(root: string): Promise<McpState> {
-  const approvalsPath = path.join(path.dirname(root), `${path.basename(root)}-mcp-approvals.json`)
+async function initMcp(): Promise<McpState> {
+  // Deliberately NOT per session. Connectors are configured once, globally, in
+  // mcp.config.json — so scoping their approvals to a session means every new
+  // session starts unapproved and the user re-reads the same descriptions
+  // forever, which is exactly how a security prompt becomes noise.
+  const approvalsPath = path.join(os.tmpdir(), 'agentic-workspace', 'mcp-approvals.json')
+  await fsp.mkdir(path.dirname(approvalsPath), { recursive: true })
 
   let pinned: PinnedTool[] = []
   try {
@@ -147,7 +152,7 @@ export async function getSession(id: string, modelAlias = 'Standard'): Promise<S
   const gateway = new ModelGateway()
   const listeners = new Set<(event: WorkspaceEvent) => void>()
   const pending = new Map<string, PendingApproval>()
-  const mcp = await initMcp(root)
+  const mcp = await initMcp()
 
   const emit = (event: WorkspaceEvent) => {
     for (const listener of listeners) listener(event)
