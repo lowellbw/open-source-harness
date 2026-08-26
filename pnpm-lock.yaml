@@ -35,6 +35,9 @@ importers:
       '@workspace/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
+      '@workspace/session':
+        specifier: workspace:*
+        version: link:../../packages/session
       '@workspace/workspace':
         specifier: workspace:*
         version: link:../../packages/workspace
@@ -140,6 +143,30 @@ importers:
       '@ag-ui/core':
         specifier: ^0.0.58
         version: 0.0.58
+
+  packages/session:
+    dependencies:
+      '@workspace/core':
+        specifier: workspace:*
+        version: link:../core
+      '@workspace/gateway-model':
+        specifier: workspace:*
+        version: link:../gateway-model
+      '@workspace/mcp':
+        specifier: workspace:*
+        version: link:../mcp
+      '@workspace/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+      '@workspace/workspace':
+        specifier: workspace:*
+        version: link:../workspace
+      ai:
+        specifier: ^7.0.79
+        version: 7.0.79(zod@3.25.76)
+      zod:
+        specifier: ^3.25.76
+        version: 3.25.76
 
   packages/workspace: {}
 

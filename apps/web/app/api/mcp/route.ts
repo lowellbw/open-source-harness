@@ -12,7 +12,7 @@ export const runtime = 'nodejs'
  */
 export async function GET(req: Request) {
   const sessionId = new URL(req.url).searchParams.get('sessionId') ?? 'default'
-  const { mcp } = await getSession(sessionId)
+  const { connectors: mcp } = await getSession(sessionId)
 
   const pending = mcp.toolset.needingApproval()
   const approved = mcp.toolset.callable()
@@ -39,7 +39,7 @@ export async function POST(req: Request) {
     all?: boolean
   }
 
-  const { mcp } = await getSession(sessionId ?? 'default')
+  const { connectors: mcp } = await getSession(sessionId ?? 'default')
   const pending = mcp.toolset.needingApproval()
   const targets = all ? pending : pending.filter((t) => t.qualifiedName === qualifiedName)
 

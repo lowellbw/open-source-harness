@@ -41,6 +41,10 @@ because they are the ones that quietly decay over a long context.
   to the workspace root so model-authored paths stay contained; a shell has a real filesystem
   and its own `/`. Containment for `exec` comes from `capabilities.isolated`, never from path
   rewriting — which is why `LocalWorkspace` must not back untrusted work.
+- **Session behaviour lives in `packages/session`, never in a shell.** The toolset, the
+  approval gate and connector bring-up are shared code: the Mac sidecar and the web app run
+  the same implementation. Putting product behaviour in `apps/*` makes §3's "one core, three
+  shells" untrue and guarantees the shells drift.
 - **Budgets, quotas and model gating are enforced at the gateway, never only in the UI.**
   Assume the UI is bypassed. (§4)
 - **Never share a sandbox across orgs.** Per-org pools, ephemeral per-user within an org,

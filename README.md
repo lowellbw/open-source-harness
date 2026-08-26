@@ -63,6 +63,7 @@ A full live pass costs well under a cent — it runs on the cheapest tier under 
 | `packages/workspace` | Execution seam: local and Docker behind one interface. |
 | `packages/gateway-model` | Model catalog, cost meter, budget ceiling, reasoning-artifact rules. |
 | `packages/core` | Agent loop, condenser, policy pinning. |
+| `packages/session` | Session lifecycle, agent toolset, approval gate, connector bring-up. Shared by every shell. |
 | `packages/mcp` | MCP client, tool-description pinning, deferred loading. |
 | `apps/web` | The workspace you open. |
 | `apps/mac-shell` | Swift shell — **source only, never compiled.** See its README. |
