@@ -9,3 +9,4 @@ build/
 .DS_Store
 coverage/
 bakeoff/**/scorecard*.json
+pnpm-lock.yaml.bak
