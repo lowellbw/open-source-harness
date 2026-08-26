@@ -4,6 +4,7 @@
   "/api/approve/route": "/api/approve",
   "/api/chat/route": "/api/chat",
   "/api/files/route": "/api/files",
+  "/api/mcp/route": "/api/mcp",
   "/api/models/route": "/api/models",
   "/page": "/"
 }

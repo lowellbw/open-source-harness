@@ -4,6 +4,7 @@
     "/api/approve": {},
     "/api/chat": {},
     "/api/files": {},
+    "/api/mcp": {},
     "/api/models": {}
   }
 }

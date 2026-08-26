@@ -3,7 +3,16 @@ import os from 'node:os'
 import path from 'node:path'
 import { tool } from 'ai'
 import { z } from 'zod'
+import fsp from 'node:fs/promises'
 import { Agent, type OrgPolicy } from '@workspace/core'
+import {
+  McpToolset,
+  ToolApprovals,
+  connectServer,
+  type ConnectedServer,
+  type McpServerConfig,
+  type PinnedTool,
+} from '@workspace/mcp'
 import { ModelGateway } from '@workspace/gateway-model'
 import { LocalWorkspace, type Workspace } from '@workspace/workspace'
 import type { WorkspaceEvent } from '@workspace/protocol'
@@ -36,11 +45,23 @@ export interface Session {
   listeners: Set<(event: WorkspaceEvent) => void>
   pending: Map<string, PendingApproval>
   modelAlias: string
+  mcp: McpState
+}
+
+export interface McpState {
+  toolset: McpToolset
+  approvals: ToolApprovals
+  servers: { id: string; era: string; protocolVersion: string | undefined }[]
+  errors: { id: string; message: string }[]
+  /** Persists approvals so a restart does not silently re-trust changed tools. */
+  save: () => Promise<void>
 }
 
 const sessions = new Map<string, Session>()
 
 const APPROVAL_TIMEOUT_MS = 300_000
+
+const BUILTIN_TOOL_NAMES = ['listFiles', 'readFile', 'writeFile', 'runCommand']
 
 export const defaultPolicy: OrgPolicy = {
   orgId: 'local',
@@ -55,6 +76,66 @@ export const defaultPolicy: OrgPolicy = {
   ],
 }
 
+/**
+ * Brings up configured MCP servers.
+ *
+ * Every failure mode here is non-fatal by design: a workspace that will not
+ * open because one connector is unreachable is worse than one that opens
+ * without it. Failures are collected and surfaced, not thrown.
+ */
+async function initMcp(root: string): Promise<McpState> {
+  const approvalsPath = path.join(path.dirname(root), `${path.basename(root)}-mcp-approvals.json`)
+
+  let pinned: PinnedTool[] = []
+  try {
+    pinned = JSON.parse(await fsp.readFile(approvalsPath, 'utf8')) as PinnedTool[]
+  } catch {
+    // No prior approvals is the normal first-run case.
+  }
+
+  const approvals = new ToolApprovals(pinned)
+  const toolset = new McpToolset(approvals)
+  const servers: McpState['servers'] = []
+  const errors: McpState['errors'] = []
+
+  let configured: McpServerConfig[] = []
+  try {
+    const raw = await fsp.readFile(path.join(process.cwd(), 'mcp.config.json'), 'utf8')
+    configured = (JSON.parse(raw) as { servers?: McpServerConfig[] }).servers ?? []
+  } catch {
+    // No config file means no connectors, which is a valid configuration.
+  }
+
+  const connected: ConnectedServer[] = []
+  for (const config of configured) {
+    try {
+      const server = await connectServer(config)
+      connected.push(server)
+      servers.push({ id: server.id, era: server.era, protocolVersion: server.protocolVersion })
+    } catch (err) {
+      errors.push({ id: config.id, message: err instanceof Error ? err.message : String(err) })
+    }
+  }
+
+  if (connected.length > 0) {
+    try {
+      await toolset.discover(connected)
+    } catch (err) {
+      errors.push({ id: 'discovery', message: err instanceof Error ? err.message : String(err) })
+    }
+  }
+
+  return {
+    toolset,
+    approvals,
+    servers,
+    errors,
+    save: async () => {
+      await fsp.writeFile(approvalsPath, JSON.stringify(approvals.export(), null, 2))
+    },
+  }
+}
+
 export async function getSession(id: string, modelAlias = 'Standard'): Promise<Session> {
   const existing = sessions.get(id)
   if (existing) return existing
@@ -66,10 +147,13 @@ export async function getSession(id: string, modelAlias = 'Standard'): Promise<S
   const gateway = new ModelGateway()
   const listeners = new Set<(event: WorkspaceEvent) => void>()
   const pending = new Map<string, PendingApproval>()
+  const mcp = await initMcp(root)
 
   const emit = (event: WorkspaceEvent) => {
     for (const listener of listeners) listener(event)
   }
+
+  const builtins = buildTools({ workspace, emit, pending })
 
   const session: Session = {
     id,
@@ -79,6 +163,7 @@ export async function getSession(id: string, modelAlias = 'Standard'): Promise<S
     listeners,
     pending,
     modelAlias,
+    mcp,
     agent: new Agent({
       gateway,
       policy: defaultPolicy,
@@ -102,7 +187,19 @@ export async function getSession(id: string, modelAlias = 'Standard'): Promise<S
           .slice(0, 4_000)
         return `Earlier steps covered: ${text.slice(0, 1_000)}`
       },
-      tools: buildTools({ workspace, emit, pending }),
+      // Built-in workspace tools are always available; MCP tools are added by
+      // discovery and gated by approval. Names cannot collide because MCP tools
+      // are namespaced by server id.
+      // Rebuilt each turn so a tool approved mid-session becomes usable without
+      // restarting the workspace.
+      tools: () => ({ ...builtins, ...mcp.toolset.aiTools() }),
+      // Deferred loading: only the search tool and whatever the model has
+      // already asked for reach the prompt. Built-ins stay active because they
+      // are few and always relevant.
+      activeTools: () =>
+        mcp.servers.length === 0
+          ? undefined
+          : [...BUILTIN_TOOL_NAMES, ...mcp.toolset.activeToolNames()],
     }),
   }
 

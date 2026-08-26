@@ -36,9 +36,20 @@ export async function POST(req: Request) {
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       let closed = false
+
+      /**
+       * A disconnected client leaves the controller closed while the agent is
+       * still working, and the next event throws ERR_INVALID_STATE. Losing a
+       * frame nobody is reading is fine; taking down the turn is not — the
+       * agent may be mid-tool-call with real side effects.
+       */
       const send = (event: WorkspaceEvent) => {
         if (closed) return
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`))
+        try {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`))
+        } catch {
+          closed = true
+        }
       }
 
       session.listeners.add(send)
@@ -47,9 +58,13 @@ export async function POST(req: Request) {
       } finally {
         session.listeners.delete(send)
         if (!closed) {
-          controller.enqueue(encoder.encode('data: {"type":"__done"}\n\n'))
           closed = true
-          controller.close()
+          try {
+            controller.enqueue(encoder.encode('data: {"type":"__done"}\n\n'))
+            controller.close()
+          } catch {
+            // Client already gone.
+          }
         }
       }
     },

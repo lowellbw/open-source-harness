@@ -33,11 +33,17 @@ workspace, and its conformance tests skip rather than fail.
   through without reading.
 - **Context compaction** that elides losslessly before it summarises, and re-injects org policy
   on every single request so constraints survive compaction.
+- **MCP connectors** with deferred tool loading, so a dozen connected servers do not put tens of
+  thousands of tokens of schema in front of the model before it has done anything. Tools are not
+  callable until you have read what they claim to do, and a tool whose description changes after
+  approval is quarantined until you read it again.
+
+Copy `apps/web/mcp.config.example.json` to `apps/web/mcp.config.json` to connect servers.
 
 ## Tests
 
 ```bash
-pnpm test          # 124 tests; Docker conformance skips if the daemon is absent
+pnpm test          # 141 tests; Docker conformance skips if the daemon is absent
 pnpm -r typecheck
 ```
 
@@ -57,6 +63,7 @@ A full live pass costs well under a cent — it runs on the cheapest tier under 
 | `packages/workspace` | Execution seam: local and Docker behind one interface. |
 | `packages/gateway-model` | Model catalog, cost meter, budget ceiling, reasoning-artifact rules. |
 | `packages/core` | Agent loop, condenser, policy pinning. |
+| `packages/mcp` | MCP client, tool-description pinning, deferred loading. |
 | `apps/web` | The workspace you open. |
 | `apps/mac-shell` | Swift shell — **source only, never compiled.** See its README. |
 
@@ -67,4 +74,5 @@ A full live pass costs well under a cent — it runs on the cheapest tier under 
 - Sessions live in server memory and workspaces in a temp directory, which suits the local
   single-user case this currently is. The hosted multi-tenant path needs per-org sandbox pools
   instead — never a shared process.
-- MCP connectors are not wired up yet.
+- MCP tool approvals persist to a file beside the workspace, but sessions themselves do not
+  survive a restart.

@@ -13,6 +13,7 @@ export default defineConfig({
       '@workspace/workspace': src('workspace'),
       '@workspace/gateway-model': src('gateway-model'),
       '@workspace/core': src('core'),
+      '@workspace/mcp': src('mcp'),
     },
   },
   test: {

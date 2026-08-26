@@ -37,7 +37,24 @@ export interface AgentConfig {
   /** Context budget that triggers compaction. */
   contextMaxTokens?: number
   maxSteps?: number
-  tools?: ToolSet
+  /**
+   * Tools available to the agent.
+   *
+   * Accepts a function so the set can change between turns — an MCP tool
+   * approved mid-session has to become registered without rebuilding the agent.
+   * A fixed object captured at construction silently strands newly approved
+   * tools: `activeTools` names them, but they are not registered, and the turn
+   * produces nothing at all.
+   */
+  tools?: ToolSet | (() => ToolSet)
+  /**
+   * Which tools are sent to the model on this step.
+   *
+   * Evaluated per step, which is what makes deferred tool loading work: every
+   * connected tool stays registered, but only the ones the model has actually
+   * asked for reach the prompt. Return undefined to send all of them.
+   */
+  activeTools?: () => string[] | undefined
   onEvent?: (event: WorkspaceEvent) => void
   persistToolOutput?: (toolCallId: string, output: unknown) => Promise<string>
   summarise?: (messages: Message[]) => Promise<string>
@@ -119,7 +136,7 @@ export class Agent {
 
       const result = streamText({
         model: resolved.model,
-        tools: this.config.tools ?? {},
+        tools: resolveTools(this.config.tools),
         stopWhen: stepCountIs(this.config.maxSteps ?? 12),
         instructions: toInstructions(this.pin.messages()),
         messages: toModelMessages(this.history),
@@ -159,6 +176,8 @@ export class Agent {
 
           const forProvider = prepareForProvider(condensed.messages, resolved.vendor)
 
+          const active = this.config.activeTools?.()
+
           return {
             // Rebuilt from source every step. History never holds the only
             // copy, so no compaction pass can lose it.
@@ -168,6 +187,7 @@ export class Agent {
               }),
             ),
             messages: toModelMessages(forProvider.messages),
+            ...(active ? { activeTools: active as never } : {}),
           }
         },
       })
@@ -252,6 +272,11 @@ export class Agent {
   private emit(event: WorkspaceEvent): void {
     this.config.onEvent?.(event)
   }
+}
+
+function resolveTools(tools: AgentConfig['tools']): ToolSet {
+  if (!tools) return {}
+  return typeof tools === 'function' ? tools() : tools
 }
 
 function vendorOfModel(upstreamModel: string): string {

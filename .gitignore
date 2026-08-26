@@ -10,3 +10,4 @@ build/
 coverage/
 bakeoff/**/scorecard*.json
 pnpm-lock.yaml.bak
+apps/web/mcp.config.json

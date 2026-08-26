@@ -60,6 +60,12 @@
       "namedRegex": "^/api/files(?:/)?$"
     },
     {
+      "page": "/api/mcp",
+      "regex": "^/api/mcp(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/mcp(?:/)?$"
+    },
+    {
       "page": "/api/models",
       "regex": "^/api/models(?:/)?$",
       "routeKeys": {},

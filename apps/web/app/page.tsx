@@ -7,6 +7,7 @@ import { Thread, type Turn } from '@/components/Thread'
 import { Composer } from '@/components/Composer'
 import { TopBar, type ModelInfo } from '@/components/TopBar'
 import { ApprovalPrompt, type Approval } from '@/components/ApprovalPrompt'
+import { ConnectorPanel } from '@/components/ConnectorPanel'
 
 const SESSION_ID = 'default'
 
@@ -182,8 +183,14 @@ export default function Page() {
       />
 
       <div className="flex min-h-0 flex-1">
-        <aside className="hidden w-72 shrink-0 border-r md:block" style={{ borderColor: 'var(--border)' }}>
-          <FilePanel sessionId={SESSION_ID} version={filesVersion} />
+        <aside
+          className="hidden w-72 shrink-0 flex-col border-r md:flex"
+          style={{ borderColor: 'var(--border)' }}
+        >
+          <div className="min-h-0 flex-1">
+            <FilePanel sessionId={SESSION_ID} version={filesVersion} />
+          </div>
+          <ConnectorPanel sessionId={SESSION_ID} />
         </aside>
 
         <main className="flex min-h-0 flex-1 flex-col">

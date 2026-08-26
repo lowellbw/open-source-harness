@@ -7,6 +7,7 @@ const config: NextConfig = {
     '@workspace/protocol',
     '@workspace/workspace',
     '@workspace/gateway-model',
+    '@workspace/mcp',
   ],
   // The workspace seam shells out and touches the filesystem; it must never be
   // bundled for the browser.
