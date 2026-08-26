@@ -119,6 +119,18 @@ Verified vendor pricing, then the seat model (assumptions: 42 sandbox-hours/mont
 
 **The one lever that matters is suspend discipline.** Keeping workspaces warm 10h/day instead of 2h takes E2B to ~$36/seat — the entire price of a seat, gone. Pick a zero-idle substrate (Modal, Cloudflare, Fly) and make suspend-on-idle an architectural commitment, not an optimisation.
 
+> **Update (26 Aug 2026):** The table's "Modal — zero when idle" is misleading, and it matters
+> because the paragraph above recommends Modal on exactly that basis. **Modal has no in-place
+> pause/resume primitive.** Its filesystem/memory snapshots produce a new Image; "resuming"
+> boots a *fresh* sandbox from it rather than reattaching. So an idle-but-alive Modal sandbox
+> keeps billing until explicitly stopped — idle cost is avoided by teardown-and-recreate
+> discipline, not by a suspend call, and cold-start on resume is a boot rather than a wake.
+> Verified genuine suspend: **E2B** (`pause()`, ~1s resume, compute billing stops though
+> snapshot storage continues), **Cloudflare Sandboxes** (2–3s wake, no charge while asleep),
+> **Daytona** (compute stops, disk keeps billing until archived). Also flagged: Modal's JS/TS
+> SDK is described by Modal as beta with incomplete parity to Python. Re-run the §5 seat maths
+> against a substrate that actually suspends before committing.
+
 **The line that can't be crossed: do not resell inference.** Sandbox + control plane + observability + support is roughly **$10–17/seat/month COGS with customer-side (or org-side) model keys** — healthy at a $25–40 seat price. Absorbing token costs yourself models out at ~$170/seat/month for two hours of agent loops a day (a third-party audit of 30 teams found median $480/dev/month on agentic coding work, 62% of it re-sent context — knowledge work is lighter, not 20× lighter). Inference is always pass-through: the org's keys, the org's bill, your meter.
 
 ---
@@ -245,8 +257,25 @@ Unchanged from v1; the essentials, all verified:
 > (Mastra emits its own `message_update` / `tool_approval_required` / `tool_suspended` /
 > `display_state_changed`), and **neither documents context compaction**. So the AG-UI contract
 > and the condenser below stay ours either way — which is exactly what lets each candidate be
-> adapted to a common contract and scored. Resolved by bake-off; see
+> adapted to a common contract and scored.
+>
+> **Resolved: the Vercel AI SDK v7 plus a thin harness we own.** `prepareStep` gives the
+> guarantee this section needs — verified against the type definitions, not the docs: it
+> receives the messages about to be sent and a returned `messages` override carries forward, so
+> our code runs before every step and compaction holds no privileged position over pinning.
+> Mastra was runner-up; its `ee/` licence was reissued 24 Aug 2026 with anti-redistribution
+> terms, and the Mac app ships the core as a bundled sidecar. See
 > [`../adr/0001-harness.md`](../adr/0001-harness.md).
+>
+> **On the Governance Decay citation below:** arXiv:2606.22528 is the weaker of two results —
+> single author, no confirmed affiliation, not peer-reviewed. Prefer Zerhoudi, Mitrović &
+> Granitzer, *"The Compaction Cliff in Long-Running AI Agent Memory"*, arXiv:2608.22752,
+> **accepted at CIKM '26**: safety-rule recall 53% after one compaction round, 10% by round
+> five, restored by pinning constraint-class content. The qualitative finding is corroborated;
+> the percentages differ between the two papers and should not be blended. Note also
+> TrueFoundry's caveat — pinning is a mitigation, not a fix, and genuinely load-bearing rules
+> (spend limits, tool scope, data boundaries) belong in infrastructure the model cannot talk
+> past, which is what §4's "enforce at the gateway, not the UI" already says.
 
 - **Condenser contract:** keep-first (system + task) + keep-recent-verbatim + summarise-the-middle, recorded as an explicit event; compaction-before-summarisation (replace old tool outputs with path references first — lossless — and only then summarise).
 
@@ -292,6 +321,18 @@ Unchanged from v1; the essentials, all verified:
 > stateless multi-tenant gateway fleet,
 > `client.connect(transport, { prior: { kind: 'modern', discover } })` wraps a persisted
 > `DiscoverResult` so workers skip the discovery probe entirely.
+>
+> Two further corrections to this paragraph:
+>
+> - **"Build stateless" needs qualifying.** SDK v2 speaks the *2025-era* protocol unless
+>   2026-07-28 is explicitly opted into, and the overwhelming majority of deployed MCP servers
+>   still predate the new revision. Legacy fallback is the correct default, not a compromise —
+>   build for 2026-07-28 and negotiate down.
+> - **"Deferred tool loading" is not an MCP feature.** It is an application-layer pattern built
+>   over `tools/list` (Anthropic ships it as a Tool Search Tool with `searchHint`/`alwaysLoad`),
+>   not a wire primitive the spec provides. We implement it ourselves. The new required
+>   `ttlMs`/`cacheScope` fields are about caching list responses and are a different mechanism —
+>   don't conflate the two.
 
 ---
 
@@ -383,7 +424,23 @@ Everything else — Cowork's timeline and cloud-default, the skills licence, the
     TypeScript, not code to reuse.
 
 11. **§6.3's open-core licensing caution generalises** beyond LiteLLM — Mastra's `ee/` directory
-    reproduces the same boundary. Treat it as a bake-off scoring dimension.
+    reproduces the same boundary, and LangGraph's self-hosted server is Elastic 2.0. Treat
+    licence fitness for *redistribution* as a first-class selection criterion: the Mac app
+    bundles the core as a sidecar, so we distribute, which is what these terms target.
+
+12. **§9's Governance Decay citation is the weaker of two available.** Prefer Zerhoudi et al.,
+    arXiv:2608.22752, accepted at CIKM '26, over the single-author unreviewed preprint. See the
+    §9 callout.
+
+13. **§11's "deferred tool loading from day one" reads as an MCP capability.** It is an
+    application-layer pattern over `tools/list`, not a wire primitive. We build it.
+
+14. **§5's "Modal — zero when idle" is wrong as stated**, and §5 recommends Modal because of it.
+    Modal has no in-place pause/resume. See the §5 callout.
+
+15. **The bake-off in §14's resequencing was dropped** in favour of a research pass. The
+    foundation decision is Vercel AI SDK v7 plus a thin harness we own; see
+    [`../adr/0001-harness.md`](../adr/0001-harness.md).
 
 ## 16. Still open
 
