@@ -20,3 +20,22 @@ export {
 } from './cost.js'
 
 export { toAgUi, CUSTOM_EVENT_NAMES, type AgUiContext } from './agui.js'
+
+export {
+  messageSchema,
+  partSchema,
+  roleSchema,
+  textPartSchema,
+  reasoningPartSchema,
+  toolCallPartSchema,
+  toolResultPartSchema,
+  textOf,
+  isReasoning,
+  type Message,
+  type Part,
+  type Role,
+  type TextPart,
+  type ReasoningPart,
+  type ToolCallPart,
+  type ToolResultPart,
+} from './messages.js'
