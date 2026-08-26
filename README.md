@@ -43,7 +43,7 @@ Copy `apps/web/mcp.config.example.json` to `apps/web/mcp.config.json` to connect
 ## Tests
 
 ```bash
-pnpm test          # 141 tests; Docker conformance skips if the daemon is absent
+pnpm test          # 188 tests; Docker conformance skips if the daemon is absent
 pnpm -r typecheck
 ```
 
@@ -64,6 +64,7 @@ A full live pass costs well under a cent — it runs on the cheapest tier under 
 | `packages/gateway-model` | Model catalog, cost meter, budget ceiling, reasoning-artifact rules. |
 | `packages/core` | Agent loop, condenser, policy pinning. |
 | `packages/session` | Session lifecycle, agent toolset, approval gate, connector bring-up. Shared by every shell. |
+| `packages/store` | SQLite persistence: threads, messages, cost ledger. |
 | `packages/mcp` | MCP client, tool-description pinning, deferred loading. |
 | `apps/web` | The workspace you open. |
 | `apps/sidecar` | Node process the Mac shell launches. Serves the same app; token-gated loopback. |

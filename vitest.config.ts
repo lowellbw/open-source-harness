@@ -15,6 +15,7 @@ export default defineConfig({
       '@workspace/core': src('core'),
       '@workspace/mcp': src('mcp'),
       '@workspace/session': src('session'),
+      '@workspace/store': src('store'),
     },
   },
   test: {
