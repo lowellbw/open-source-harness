@@ -41,12 +41,6 @@ enum SidecarState {
         return nil
     }
 
-    var isBusy: Bool {
-        switch self {
-        case .starting, .restarting: return true
-        case .idle, .running, .failed: return false
-        }
-    }
 }
 
 enum SidecarFailure: Error, Equatable {
@@ -118,7 +112,11 @@ struct SidecarLaunchSpec {
     /// log output.
     static let readyMarker = "AGENTIC_SIDECAR_READY"
 
-    static func resolve(dataDirectory: URL) throws -> SidecarLaunchSpec {
+    /// - Parameter providerAPIKey: passed to the child in its environment when the
+    ///   user has stored one locally. A managed deployment has none: the org's key
+    ///   lives in the gateway, which is also where budgets and model gating are
+    ///   enforced, and the sidecar authenticates to the gateway instead.
+    static func resolve(dataDirectory: URL, providerAPIKey: String?) throws -> SidecarLaunchSpec {
         let environment = ProcessInfo.processInfo.environment
 
         let script = try resolveServerScript(environment: environment)
@@ -140,6 +138,11 @@ struct SidecarLaunchSpec {
         ]
         if let lang = environment["LANG"] { childEnvironment["LANG"] = lang }
         if let tz = environment["TZ"] { childEnvironment["TZ"] = tz }
+        // Environment rather than a file or an argument: argv is world-readable via
+        // `ps`, and a file on disk outlives the process that needed it.
+        if let providerAPIKey, !providerAPIKey.isEmpty {
+            childEnvironment["AGENTIC_PROVIDER_API_KEY"] = providerAPIKey
+        }
 
         return SidecarLaunchSpec(
             executable: node,

@@ -175,7 +175,16 @@ export class Agent {
       this.emit({ type: 'message.started', runId, ts: Date.now(), messageId })
 
       for await (const part of result.fullStream) {
-        if (part.type === 'text-delta') {
+        if (part.type === 'text-start') {
+          // A multi-step turn produces one text block per step. Without a
+          // separator they concatenate mid-sentence ("...emptiness.I listed
+          // the workspace..."), which reads as a rendering bug.
+          if (text.length > 0 && !text.endsWith('\n\n')) {
+            const gap = text.endsWith('\n') ? '\n' : '\n\n'
+            text += gap
+            this.emit({ type: 'message.delta', runId, ts: Date.now(), messageId, delta: gap })
+          }
+        } else if (part.type === 'text-delta') {
           text += part.text
           this.emit({ type: 'message.delta', runId, ts: Date.now(), messageId, delta: part.text })
         } else if (part.type === 'reasoning-delta') {

@@ -244,7 +244,7 @@ private enum ProcessRunner {
             }
 
             let pid = process.processIdentifier
-            let deadline = DispatchWorkItem {
+            let timeoutWork = DispatchWorkItem {
                 box.markTimedOut()
                 guard process.isRunning else { return }
                 process.terminate()
@@ -257,8 +257,8 @@ private enum ProcessRunner {
                     if process.isRunning { kill(pid, SIGKILL) }
                 }
             }
-            box.armTimeout(deadline)
-            DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: deadline)
+            box.armTimeout(timeoutWork)
+            DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: timeoutWork)
         }
     }
 }

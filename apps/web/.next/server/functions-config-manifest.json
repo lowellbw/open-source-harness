@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "functions": {
+    "/api/approve": {},
+    "/api/chat": {},
+    "/api/files": {},
+    "/api/models": {}
+  }
+}

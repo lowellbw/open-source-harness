@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!--
+    Entitlements for the app itself. Almost empty on purpose.
+
+    NOT PRESENT, and must never be added:
+
+      com.apple.security.app-sandbox
+
+    App Sandbox breaks this app in two unrecoverable ways. A sandboxed process cannot
+    spawn and supervise an arbitrary child (the Node sidecar) outside its container,
+    and it cannot usefully call sandbox-exec, because Seatbelt profiles do not nest:
+    the outer container already denies what the inner profile would have to grant.
+    That is also why Mac App Store distribution is not available — App Review requires
+    the sandbox, and guideline 2.5.2 separately prohibits executing downloaded code
+    that changes app functionality, which is the whole product. Direct download with
+    Developer ID, notarization and Sparkle is the distribution path.
+
+    The app needs no JIT and loads no third-party libraries of its own, so it takes
+    the strictest hardened-runtime posture available: nothing relaxed here. The
+    sidecar's separate signature carries the relaxations V8 needs — see
+    Sidecar.entitlements.
+  -->
+</dict>
+</plist>

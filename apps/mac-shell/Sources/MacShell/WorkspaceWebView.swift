@@ -44,7 +44,10 @@ struct WorkspaceWebView: NSViewRepresentable {
         webView.isInspectable = true
         #endif
 
-        context.coordinator.load(url, in: webView)
+        // `sync` rather than `load`: it seeds the coordinator's nonce as well as its
+        // URL, so a Reload issued before the view existed does not cause a second load
+        // on the first update pass.
+        context.coordinator.sync(url: url, reloadNonce: reloadNonce, in: webView)
         return webView
     }
 
@@ -167,7 +170,13 @@ struct WorkspaceWebView: NSViewRepresentable {
                 decisionHandler(.cancel)
                 return
             }
-            if url.absoluteString == "about:blank" || Self.isWorkspaceOrigin(url, expected: lastLoadedURL) {
+            // `blob:` is allowed because a blob URL can only be minted by the page
+            // already running in this frame, and the workspace uses them to open
+            // generated files. `data:` is not: a top-level data: navigation is a
+            // known way to render attacker-controlled markup inside trusted chrome.
+            if url.absoluteString == "about:blank"
+                || url.scheme?.lowercased() == "blob"
+                || Self.isWorkspaceOrigin(url, expected: lastLoadedURL) {
                 decisionHandler(.allow)
                 return
             }
@@ -229,7 +238,7 @@ struct WorkspaceWebView: NSViewRepresentable {
                 let delay = Double(retryCount) * 0.5
                 loadState.wrappedValue = .loading
                 let work = DispatchWorkItem { [weak webView] in
-                    webView?.load(Self.request(for: url))
+                    webView?.load(Coordinator.request(for: url))
                 }
                 pendingRetry = work
                 DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)

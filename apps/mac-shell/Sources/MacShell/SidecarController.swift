@@ -19,9 +19,9 @@ final class SidecarController: ObservableObject {
     @Published private(set) var recentOutput: [String] = []
 
     private let dataDirectory: URL
+    private let keychain: KeychainStore
     private let log = Logger(subsystem: AppInfo.subsystem, category: "sidecar")
 
-    private var spec: SidecarLaunchSpec?
     private var process: Process?
     private var stdinPipe: Pipe?
     private var stdoutHandle: FileHandle?
@@ -49,8 +49,9 @@ final class SidecarController: ObservableObject {
     private static let readyTimeout: TimeInterval = 20
     private static let outputHistoryLimit = 200
 
-    init(dataDirectory: URL) {
+    init(dataDirectory: URL, keychain: KeychainStore) {
         self.dataDirectory = dataDirectory
+        self.keychain = keychain
     }
 
     // MARK: - Control
@@ -116,14 +117,19 @@ final class SidecarController: ObservableObject {
     // MARK: - Launch
 
     private func launch() {
+        // A failure to read the Keychain must not stop the workspace from starting:
+        // most deployments have no local key at all, and the ones that do would rather
+        // see the sidecar report a missing credential than see no window.
+        let providerAPIKey = (try? keychain.read(account: KeychainAccount.providerAPIKey)) ?? nil
+
+        // Resolved on every launch rather than cached, so a key saved in Settings and
+        // a Restart Sidecar are enough to apply it.
         let resolved: SidecarLaunchSpec
         do {
-            if let spec {
-                resolved = spec
-            } else {
-                resolved = try SidecarLaunchSpec.resolve(dataDirectory: dataDirectory)
-                spec = resolved
-            }
+            resolved = try SidecarLaunchSpec.resolve(
+                dataDirectory: dataDirectory,
+                providerAPIKey: providerAPIKey
+            )
         } catch let failure as SidecarFailure {
             state = .failed(failure)
             return
@@ -193,9 +199,9 @@ final class SidecarController: ObservableObject {
         log.notice("Sidecar started, pid \(String(process.processIdentifier), privacy: .public)")
 
         readyWatchdog = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: UInt64(Self.readyTimeout * 1_000_000_000))
+            try? await Task.sleep(nanoseconds: UInt64(SidecarController.readyTimeout * 1_000_000_000))
             guard let self, !Task.isCancelled, self.generation == gen, self.state.endpoint == nil else { return }
-            let note = "did not print \(SidecarLaunchSpec.readyMarker) within \(Int(Self.readyTimeout))s"
+            let note = "did not print \(SidecarLaunchSpec.readyMarker) within \(Int(SidecarController.readyTimeout))s"
             self.log.error("Sidecar \(note, privacy: .public)")
             self.pendingFailureNote = note
             // Kill it and let the ordinary exit path apply backoff and the attempt cap.
@@ -369,8 +375,8 @@ final class SidecarController: ObservableObject {
         if let data = payload.data(using: .utf8),
            let decoded = try? JSONDecoder().decode(ReadyPayload.self, from: data),
            let port = UInt16(exactly: decoded.port), port > 0 {
-            let token = decoded.token.flatMap { $0.isEmpty ? nil : $0 }
-            return SidecarEndpoint(port: port, token: token)
+            let rawToken = decoded.token ?? ""
+            return SidecarEndpoint(port: port, token: rawToken.isEmpty ? nil : rawToken)
         }
 
         // Tolerated so a throwaway stub server can print `AGENTIC_SIDECAR_READY 51234`.

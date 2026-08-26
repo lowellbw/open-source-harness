@@ -39,8 +39,9 @@ final class AppServices: ObservableObject {
         dataDirectory = base
         workspaceRoot = base.appendingPathComponent("workspace", isDirectory: true)
 
-        keychain = KeychainStore(service: AppInfo.bundleIdentifier)
-        sidecar = SidecarController(dataDirectory: base)
+        let keychain = KeychainStore(service: AppInfo.bundleIdentifier)
+        self.keychain = keychain
+        sidecar = SidecarController(dataDirectory: base, keychain: keychain)
     }
 
     func start() {

@@ -1,0 +1,61 @@
+@import "tailwindcss";
+
+/*
+ * PLAN-V2 §7: the Apple read comes from restraint — typography, spacing
+ * rhythm, muted borders — not from glass. Translucency is used only on
+ * floating chrome, never on content surfaces.
+ *
+ * Type is the system stack for now. §7 specifies Inter Variable on web; that
+ * arrives with the DTCG token pipeline (packages/tokens) rather than being
+ * hardcoded here, and self-hosting SF is a licence violation regardless.
+ */
+
+:root {
+  --bg: #fbfbfd;
+  --surface: #ffffff;
+  --border: #e6e6ea;
+  --text: #1d1d1f;
+  --muted: #6e6e73;
+  --accent: #0071e3;
+  --danger: #d70015;
+  --ok: #248a3d;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #131316;
+    --surface: #1c1c1f;
+    --border: #2c2c31;
+    --text: #f5f5f7;
+    --muted: #98989d;
+    --accent: #2997ff;
+    --danger: #ff453a;
+    --ok: #30d158;
+  }
+}
+
+html, body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  -webkit-font-smoothing: antialiased;
+}
+
+.surface { background: var(--surface); border-color: var(--border); }
+.muted { color: var(--muted); }
+
+/* Floating chrome only. */
+.chrome {
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  backdrop-filter: saturate(180%) blur(20px);
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .chrome { background: var(--surface); backdrop-filter: none; }
+}
+
+.mono { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+
+@keyframes pulse-soft { 0%, 100% { opacity: 1 } 50% { opacity: .45 } }
+.thinking { animation: pulse-soft 1.4s ease-in-out infinite; }
