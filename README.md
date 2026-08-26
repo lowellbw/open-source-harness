@@ -47,6 +47,17 @@ pnpm test          # 188 tests; Docker conformance skips if the daemon is absent
 pnpm -r typecheck
 ```
 
+Performance measurements are opt-in and print rather than assert:
+
+```bash
+RUN_BENCH=1 pnpm vitest run packages/store/src/bench.test.ts
+```
+
+They exist to answer "does our own code matter", not to be minimised. A model
+call is roughly a second; condensing 5,000 messages takes single-digit
+milliseconds. Optimising a path that is one percent of the budget is how you
+spend a week making nothing faster.
+
 The live provider tests are opt-in, since they cost money and need network:
 
 ```bash
