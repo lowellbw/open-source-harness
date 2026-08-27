@@ -51,6 +51,16 @@ const samples: WorkspaceEvent[] = [
     model: 'Standard',
   },
   { type: 'workspace.file.changed', runId: 'r1', ts: 17, path: '/out/deck.pptx', op: 'created' },
+  { type: 'subagent.started', runId: 'r1', ts: 19, subagentId: 's1', task: 'Find the condenser' },
+  {
+    type: 'subagent.finished',
+    runId: 'r1',
+    ts: 20,
+    subagentId: 's1',
+    cost: zeroCost,
+    stoppedBy: 'complete',
+    reportChars: 412,
+  },
   {
     type: 'source.cited',
     runId: 'r1',

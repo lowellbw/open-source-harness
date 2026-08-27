@@ -173,6 +173,9 @@ importers:
       '@workspace/store':
         specifier: workspace:*
         version: link:../store
+      '@workspace/subagents':
+        specifier: workspace:*
+        version: link:../subagents
       '@workspace/workspace':
         specifier: workspace:*
         version: link:../workspace
@@ -188,6 +191,27 @@ importers:
       '@workspace/protocol':
         specifier: workspace:*
         version: link:../protocol
+      zod:
+        specifier: ^3.25.76
+        version: 3.25.76
+
+  packages/subagents:
+    dependencies:
+      '@workspace/core':
+        specifier: workspace:*
+        version: link:../core
+      '@workspace/gateway-model':
+        specifier: workspace:*
+        version: link:../gateway-model
+      '@workspace/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+      '@workspace/workspace':
+        specifier: workspace:*
+        version: link:../workspace
+      ai:
+        specifier: ^7.0.79
+        version: 7.0.79(zod@3.25.76)
       zod:
         specifier: ^3.25.76
         version: 3.25.76

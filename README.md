@@ -12,9 +12,12 @@ Needs Node 22+, pnpm, and a model provider key.
 
 ```bash
 pnpm install
-export OPENROUTER_API_KEY=sk-or-...   # the only credential required
+cp .env.example .env.local            # then fill in OPENROUTER_API_KEY
 pnpm dev                              # http://localhost:3000
 ```
+
+`OPENROUTER_API_KEY` is the only credential required. `BRAVE_API_KEY` is optional — see
+**Web search** below.
 
 Docker is optional. Without it everything still works — you lose only the container-backed
 workspace, and its conformance tests skip rather than fail.
@@ -34,6 +37,15 @@ workspace, and its conformance tests skip rather than fail.
   through without reading.
 - **Context compaction** that elides losslessly before it summarises, and re-injects org policy
   on every single request so constraints survive compaction.
+- **Web search**, either way round. With `BRAVE_API_KEY` it is an explicit tool call: visible
+  query, inspectable results, its own line in the trace. Without one, the gateway attaches
+  OpenRouter's server-side search to the request instead — no second credential, no extra
+  sub-processor. Either way the pages the model cited render as links under the answer, because a
+  searched answer that shows no sources is indistinguishable from an asserted one.
+- **Read-only research subagents.** Send several out at once to chase independent questions; each
+  gets its own context and its own spend ceiling, and returns a short report written to a file
+  rather than pasted back. They cannot write, run commands, use connectors, or spawn more of
+  themselves — enforced by a workspace wrapper that refuses, not by asking the model nicely.
 - **MCP connectors** with deferred tool loading, so a dozen connected servers do not put tens of
   thousands of tokens of schema in front of the model before it has done anything. Tools are not
   callable until you have read what they claim to do, and a tool whose description changes after
@@ -44,7 +56,7 @@ Copy `apps/web/mcp.config.example.json` to `apps/web/mcp.config.json` to connect
 ## Tests
 
 ```bash
-pnpm test          # 215 tests; Docker conformance skips if the daemon is absent
+pnpm test          # 249 tests; Docker conformance skips if the daemon is absent
 pnpm -r typecheck
 ```
 
@@ -63,6 +75,8 @@ The live provider tests are opt-in, since they cost money and need network:
 
 ```bash
 RUN_LIVE=1 pnpm vitest run packages/core/src/live.test.ts
+RUN_LIVE=1 pnpm vitest run packages/session/src/live-search.test.ts
+RUN_LIVE=1 pnpm vitest run packages/session/src/live-subagents.test.ts
 ```
 
 A full live pass costs well under a cent — it runs on the cheapest tier under the budget guard.
@@ -77,6 +91,7 @@ A full live pass costs well under a cent — it runs on the cheapest tier under 
 | `packages/core` | Agent loop, condenser, policy pinning. |
 | `packages/session` | Session lifecycle, agent toolset, approval gate, connector bring-up. Shared by every shell. |
 | `packages/store` | SQLite persistence: threads, messages, cost ledger. |
+| `packages/subagents` | Read-only scouts: the workspace wrapper, their toolset, the spawn tool. |
 | `packages/mcp` | MCP client, tool-description pinning, deferred loading. |
 | `apps/web` | The workspace you open. |
 | `apps/sidecar` | Node process the Mac shell launches. Serves the same app; token-gated loopback. |
@@ -89,5 +104,6 @@ A full live pass costs well under a cent — it runs on the cheapest tier under 
 - Sessions live in server memory and workspaces in a temp directory, which suits the local
   single-user case this currently is. The hosted multi-tenant path needs per-org sandbox pools
   instead — never a shared process.
-- MCP tool approvals persist to a file beside the workspace, but sessions themselves do not
-  survive a restart.
+- MCP tool approvals persist to a file beside the workspace.
+- Docker conformance skips silently when the daemon is not running, and the daemon in a container
+  dies periodically. `pgrep dockerd` before trusting a green run — the skip count is the tell.

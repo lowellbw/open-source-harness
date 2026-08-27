@@ -63,6 +63,31 @@ export const workspaceEventSchema = z.discriminatedUnion('type', [
   z.object({ ...base, type: z.literal('tool.call.started'), toolCallId: z.string(), name: z.string(), args: z.unknown() }),
   z.object({ ...base, type: z.literal('tool.call.finished'), toolCallId: z.string(), result: z.unknown(), isError: z.boolean() }),
 
+  // ---- subagents ----
+  /**
+   * A read-only scout, started and finished.
+   *
+   * Only these two events cross the boundary — deliberately. Forwarding a
+   * scout's whole stream would put its transcript in front of the reader, which
+   * is the same cost the scout exists to avoid, moved from the model's context
+   * to the person's attention. What the parent needs is: what was asked, what
+   * it cost, and what came back.
+   */
+  z.object({
+    ...base,
+    type: z.literal('subagent.started'),
+    subagentId: z.string(),
+    task: z.string(),
+  }),
+  z.object({
+    ...base,
+    type: z.literal('subagent.finished'),
+    subagentId: z.string(),
+    cost: costBucketsSchema,
+    stoppedBy: z.enum(['complete', 'budget_exceeded', 'error']),
+    reportChars: z.number().int().nonnegative(),
+  }),
+
   // ---- sources ----
   /**
    * A page the model cited.

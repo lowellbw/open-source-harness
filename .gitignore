@@ -2,6 +2,10 @@ node_modules/
 dist/
 build/
 .turbo/
+# Next's build output, INCLUDING its Turbopack cache. Not merely noise: the
+# cache inlines values from .env.local, so a committed .next/ leaks whatever
+# credentials the build could see.
+.next/
 *.tsbuildinfo
 .env
 .env.*

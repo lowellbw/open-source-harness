@@ -8,6 +8,8 @@ import type { Store, ThreadSummary } from '@workspace/store'
 import { ApprovalGate } from './approvals.js'
 import { buildWorkspaceTools } from './tools.js'
 import { buildSearchWebTools, searchProviderFromEnv, type SearchProvider } from './search.js'
+import { buildSubagentTools } from '@workspace/subagents'
+import { buildWebTools } from './tools-web.js'
 import { initConnectors, type ConnectorConfig, type ConnectorState } from './connectors.js'
 
 /**
@@ -52,6 +54,10 @@ export interface SessionManagerConfig {
    * disable search altogether rather than falling back.
    */
   searchProvider?: SearchProvider | null
+  /** Set false to remove the `research` tool entirely. */
+  subagents?: boolean
+  /** Scouts read and summarise, which is not premium work. Defaults to Light. */
+  scoutModelAlias?: string
 }
 
 export interface Session {
@@ -157,9 +163,29 @@ export class SessionManager {
     }
 
     const approvals = new ApprovalGate(emit, this.config.approvalTimeoutMs)
+
+    // The read-only slice a scout may have. Web fetch and search reach outside
+    // the workspace but change nothing in it, so they are safe to hand over;
+    // they are injected rather than imported by `@workspace/subagents` so that
+    // package does not depend on this one, which depends on it.
+    const scoutExtraTools = {
+      ...buildWebTools(),
+      ...(searchProvider ? buildSearchWebTools({ provider: searchProvider }) : {}),
+    }
+
     const builtins = {
       ...buildWorkspaceTools({ workspace, approvals, emit }),
       ...(searchProvider ? buildSearchWebTools({ provider: searchProvider }) : {}),
+      ...(this.config.subagents === false
+        ? {}
+        : buildSubagentTools({
+            workspace,
+            policy,
+            gateway,
+            emit,
+            extraTools: scoutExtraTools,
+            ...(this.config.scoutModelAlias ? { modelAlias: this.config.scoutModelAlias } : {}),
+          })),
     }
 
     const session: Session = {

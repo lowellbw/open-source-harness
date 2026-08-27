@@ -41,6 +41,12 @@ because they are the ones that quietly decay over a long context.
   to the workspace root so model-authored paths stay contained; a shell has a real filesystem
   and its own `/`. Containment for `exec` comes from `capabilities.isolated`, never from path
   rewriting — which is why `LocalWorkspace` must not back untrusted work.
+- **A subagent's read-only-ness is a property of its workspace, not of its prompt.** `readOnly()`
+  in `packages/subagents` refuses `write`, `mkdir`, `remove` AND `exec` — a shell is a write
+  primitive, so a scout that can run commands is not read-only. This is why scouts search by
+  walking the tree in JS rather than reusing the grep-backed tools in `packages/session`. Scouts
+  also get their own gateway (own spend ceiling), no MCP, and no spawn tool, so depth is bounded
+  at one.
 - **Session behaviour lives in `packages/session`, never in a shell.** The toolset, the
   approval gate and connector bring-up are shared code: the Mac sidecar and the web app run
   the same implementation. Putting product behaviour in `apps/*` makes §3's "one core, three

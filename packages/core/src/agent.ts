@@ -151,6 +151,22 @@ export class Agent {
     const messageId = randomUUID()
     let text = ''
 
+    /**
+     * The real error, kept from the stream.
+     *
+     * When `prepareStep` throws — which is where the budget ceiling is
+     * enforced — the SDK surfaces the original error as an `error` part and
+     * then rejects `result.usage` with a generic `NoOutputGeneratedError` that
+     * carries no `cause` chain back to it. Classifying on what the `await`
+     * throws therefore reports every mid-turn budget stop as a plain failure:
+     * the user is told something went wrong rather than that they hit their
+     * spend limit. Verified against the SDK, not assumed.
+     *
+     * Declared out here rather than in the try, because the catch is the only
+     * place it is read.
+     */
+    let streamError: unknown
+
     try {
       // Inside the try: resolve() enforces the budget ceiling and role gating,
       // and both must surface as a returned result rather than a thrown error.
@@ -245,6 +261,8 @@ export class Agent {
           this.emit({ type: 'message.delta', runId, ts: Date.now(), messageId, delta: part.text })
         } else if (part.type === 'reasoning-delta') {
           this.emit({ type: 'reasoning.delta', runId, ts: Date.now(), messageId, delta: part.text })
+        } else if (part.type === 'error') {
+          streamError = part.error
         } else if (part.type === 'finish-step') {
           // Summed per step rather than read from the final total: the raw
           // provider payload the count lives in does not survive aggregation.
@@ -310,12 +328,15 @@ export class Agent {
 
       return { text, runId, stoppedBy: 'complete' }
     } catch (error) {
-      const reason = error instanceof BudgetExceededError ? 'budget_exceeded' : 'error'
+      // Prefer what the stream reported: it is the original, and the thrown
+      // value is often a wrapper that has lost it.
+      const cause = streamError ?? error
+      const reason = cause instanceof BudgetExceededError ? 'budget_exceeded' : 'error'
       this.emit({
         type: 'run.error',
         runId,
         ts: Date.now(),
-        message: error instanceof Error ? error.message : String(error),
+        message: cause instanceof Error ? cause.message : String(cause),
       })
       this.emit({ type: 'run.finished', runId, ts: Date.now(), reason })
       this.emit({ type: 'status', runId, ts: Date.now(), state: 'idle' })
@@ -324,7 +345,7 @@ export class Agent {
         text,
         runId,
         stoppedBy: reason === 'budget_exceeded' ? 'budget_exceeded' : 'error',
-        error: error instanceof Error ? error : new Error(String(error)),
+        error: cause instanceof Error ? cause : new Error(String(cause)),
       }
     }
   }

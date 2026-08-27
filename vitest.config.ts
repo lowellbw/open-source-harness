@@ -16,6 +16,7 @@ export default defineConfig({
       '@workspace/mcp': src('mcp'),
       '@workspace/session': src('session'),
       '@workspace/store': src('store'),
+      '@workspace/subagents': src('subagents'),
     },
   },
   test: {
