@@ -97,6 +97,18 @@ importers:
         specifier: ^5.7.2
         version: 5.9.3
 
+  packages/connectors:
+    dependencies:
+      '@workspace/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+      ai:
+        specifier: ^7.0.79
+        version: 7.0.79(zod@3.25.76)
+      zod:
+        specifier: ^3.25.76
+        version: 3.25.76
+
   packages/core:
     dependencies:
       '@workspace/gateway-model':
@@ -182,6 +194,9 @@ importers:
 
   packages/session:
     dependencies:
+      '@workspace/connectors':
+        specifier: workspace:*
+        version: link:../connectors
       '@workspace/core':
         specifier: workspace:*
         version: link:../core

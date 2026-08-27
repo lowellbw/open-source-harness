@@ -80,6 +80,10 @@ is absent.
   cost a few hundred tokens a turn instead of tens of thousands. Curated local directory only —
   a skill is instructions that get followed, so where it came from is the whole of its trust
   story.
+- **First-party Drive, Gmail and Slack.** Search and read documents, mail and messages; send
+  and post where the scopes allow, always behind an approval showing the whole message. Scopes
+  are narrow by default and read-only unless you opt in — nothing here ever asks for a scope
+  that can delete. Needs an OAuth app you register; a shipped client secret is not a secret.
 - **MCP connectors** with deferred tool loading, so a dozen connected servers do not put tens of
   thousands of tokens of schema in front of the model before it has done anything. Tools are not
   callable until you have read what they claim to do, and a tool whose description changes after
@@ -90,7 +94,7 @@ Copy `apps/web/mcp.config.example.json` to `apps/web/mcp.config.json` to connect
 ## Tests
 
 ```bash
-pnpm test          # 339 tests; Docker conformance skips if the daemon is absent
+pnpm test          # 370 tests; Docker conformance skips if the daemon is absent
 pnpm -r typecheck
 ```
 
@@ -135,6 +139,7 @@ A full live pass costs well under a cent — it runs on the cheapest tier under 
 | `packages/subagents` | Read-only scouts: the workspace wrapper, their toolset, the spawn tool. |
 | `packages/documents` | docx/pptx/xlsx builders, LibreOffice rendering, the three verification gates. |
 | `packages/skills` | SKILL.md parsing, the curated registry, progressive disclosure. |
+| `packages/connectors` | OAuth with PKCE, encrypted token storage, Drive/Gmail/Slack toolsets. |
 | `packages/mcp` | MCP client, tool-description pinning, deferred loading. |
 | `apps/web` | The workspace you open. |
 | `apps/sidecar` | Node process the Mac shell launches. Serves the same app; token-gated loopback, and the seam that translates the shell's environment contract. |

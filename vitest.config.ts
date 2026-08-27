@@ -19,6 +19,7 @@ export default defineConfig({
       '@workspace/subagents': src('subagents'),
       '@workspace/documents': src('documents'),
       '@workspace/skills': src('skills'),
+      '@workspace/connectors': src('connectors'),
     },
   },
   test: {

@@ -58,6 +58,15 @@ because they are the ones that quietly decay over a long context.
   it would break every legitimate absolute path.
 - **Budgets, quotas and model gating are enforced at the gateway, never only in the UI.**
   Assume the UI is bypassed. (§4)
+- **A refresh token is a standing grant to read someone's mail.** It is encrypted at rest with
+  AES-256-GCM under a key held OUTSIDE the store (`AGENTIC_TOKEN_KEY`, or the Keychain on a
+  Mac). Without a key, connectors are disabled rather than storing tokens in the clear. The
+  account name stays outside the ciphertext so a connections list is readable on a machine that
+  has lost the key — which is exactly when you want to see it.
+- **OAuth `state` is checked, not merely sent.** An unchecked state is login-CSRF: the user
+  completes a flow that connects the ATTACKER's account, and everything the agent then reads
+  and writes goes to them. PKCE is used even with a client secret, because the redirect lands on
+  a loopback listener any local process can race for.
 - **Never share a sandbox across orgs.** Per-org pools, ephemeral per-user within an org,
   default-deny egress. (§4)
 - **A browsed page is prompt injection with hands.** `fetchUrl` returns untrusted text; the

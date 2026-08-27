@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import type { ToolSet } from 'ai'
 import { Agent, type OrgPolicy, type ReasoningEffort } from '@workspace/core'
 import { ModelGateway } from '@workspace/gateway-model'
 import { LocalWorkspace, type Workspace } from '@workspace/workspace'
@@ -14,6 +15,14 @@ import { buildImageTools } from './tools-image.js'
 import { buildDocumentTools } from './tools-documents.js'
 import { buildPythonTools } from './tools-python.js'
 import { buildBrowserTools } from './tools-browser.js'
+import {
+  buildConnectorTools,
+  providersFromEnv,
+  MemoryTokenStore,
+  encryptionKeyFromEnv,
+  type ProviderConfig,
+  type TokenStore,
+} from '@workspace/connectors'
 import { buildSkillTools, loadSkills, skillInstructions, type ParsedSkill, type SkillLoadError } from '@workspace/skills'
 import { initConnectors, type ConnectorConfig, type ConnectorState } from './connectors.js'
 
@@ -89,6 +98,16 @@ export interface SessionManagerConfig {
    * to have it, not discover it.
    */
   browser?: boolean
+  /**
+   * First-party connectors — Drive, Gmail, Slack.
+   *
+   * Read from the environment when absent. A provider with no client ID is
+   * omitted rather than present-and-broken: a tool that always answers "not
+   * configured" is a tool the model keeps trying.
+   */
+  connectorProviders?: ProviderConfig[]
+  /** Where OAuth tokens live. Refuses to exist without an encryption key. */
+  tokenStore?: TokenStore
 }
 
 export interface Session {
@@ -118,6 +137,7 @@ export const defaultPolicy: OrgPolicy = {
 
 export class SessionManager {
   private readonly sessions = new Map<string, Session>()
+  private tokens: TokenStore | undefined
   private connectors: ConnectorState | undefined
   private connectorsPromise: Promise<ConnectorState> | undefined
   private skills: ParsedSkill[] = []
@@ -170,6 +190,28 @@ export class SessionManager {
 
   listSkills(): ParsedSkill[] {
     return this.skills
+  }
+
+  /**
+   * Token storage, built once.
+   *
+   * Absent when there is no encryption key, and that is a refusal rather than
+   * a fallback: a refresh token is a standing grant to read someone's mail,
+   * and holding one in the clear is worse than not holding it.
+   */
+  private getTokenStore(): TokenStore | undefined {
+    if (this.config.tokenStore) return this.config.tokenStore
+    if (this.tokens) return this.tokens
+
+    const key = encryptionKeyFromEnv()
+    if (!key) return undefined
+    this.tokens = new MemoryTokenStore(key)
+    return this.tokens
+  }
+
+  /** The connectors this installation has credentials for. */
+  connectorProviders(): ProviderConfig[] {
+    return this.config.connectorProviders ?? providersFromEnv()
   }
 
   async get(id: string, modelAlias?: string): Promise<Session> {
@@ -229,6 +271,28 @@ export class SessionManager {
 
     const approvals = new ApprovalGate(emit, this.config.approvalTimeoutMs)
 
+    // Built before the toolset so the spread stays a plain object literal —
+    // reducing into one inline defeats the ToolSet type and turns every tool
+    // into `unknown`.
+    const tokenStore = this.getTokenStore()
+    const connectorTools: ToolSet = tokenStore
+      ? Object.assign(
+          {},
+          ...this.connectorProviders().map((provider) =>
+            buildConnectorTools({
+              provider,
+              tokens: tokenStore,
+              // Sending and posting go through the ordinary gate. NOT scoped
+              // for the session: an email is not a class of action you consent
+              // to in advance, because the thing being approved is the message,
+              // not the capability.
+              confirm: async (reason, payload) =>
+                (await approvals.request(reason, payload)) === 'allow',
+            }),
+          ),
+        )
+      : {}
+
     // The read-only slice a scout may have. Web fetch and search reach outside
     // the workspace but change nothing in it, so they are safe to hand over;
     // they are injected rather than imported by `@workspace/subagents` so that
@@ -248,6 +312,7 @@ export class SessionManager {
         ? {}
         : buildPythonTools({ workspace, approvals, emit })),
       ...(this.config.browser ? buildBrowserTools({ workspace, approvals, emit }) : {}),
+      ...connectorTools,
       ...(this.config.images === false
         ? {}
         : buildImageTools({ workspace, gateway, emit })),
