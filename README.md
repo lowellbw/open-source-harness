@@ -72,6 +72,9 @@ is absent.
   it saves appear in the artifact panel automatically. Each call is a fresh process — state
   lives in files, which are inspectable and survive a restart, rather than in a kernel whose
   contents go stale against the files underneath it.
+- **Browser control**, off by default. Opens a real Chromium, reads pages that need JavaScript
+  or a login, clicks and types, and returns a screenshot. Opt-in rather than opt-out because it
+  is the widest capability here — a deployment should decide to have it, not discover it.
 - **Skills.** Drop a `SKILL.md` into the skills directory and its one-line description joins
   every request; the instructions themselves load only when the model opens it. Twenty skills
   cost a few hundred tokens a turn instead of tens of thousands. Curated local directory only —
@@ -87,7 +90,7 @@ Copy `apps/web/mcp.config.example.json` to `apps/web/mcp.config.json` to connect
 ## Tests
 
 ```bash
-pnpm test          # 323 tests; Docker conformance skips if the daemon is absent
+pnpm test          # 339 tests; Docker conformance skips if the daemon is absent
 pnpm -r typecheck
 ```
 

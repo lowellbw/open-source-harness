@@ -212,6 +212,9 @@ importers:
       ai:
         specifier: ^7.0.79
         version: 7.0.79(zod@3.25.76)
+      playwright:
+        specifier: ^1.62.1
+        version: 1.62.1
       zod:
         specifier: ^3.25.76
         version: 3.25.76

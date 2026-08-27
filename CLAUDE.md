@@ -60,6 +60,12 @@ because they are the ones that quietly decay over a long context.
   Assume the UI is bypassed. (§4)
 - **Never share a sandbox across orgs.** Per-org pools, ephemeral per-user within an org,
   default-deny egress. (§4)
+- **A browsed page is prompt injection with hands.** `fetchUrl` returns untrusted text; the
+  browser returns untrusted text AND can act on it. Page content always comes back under a
+  neutral `content` key, every tool description says it is material rather than direction, and
+  the private-range refusal is the same list as `fetchUrl` — a browser that can reach
+  169.254.169.254 is a credential exfiltration tool with a rendering engine attached. Typed text
+  never enters an approval payload; a password would land in the event log and the transcript.
 - **Never blanket-allow a model vendor's API surface** in an egress allowlist. That is the
   documented exfiltration path. (§6.3, §9)
 - **Org policy, permissions and scope re-inject every turn** — pinned outside compactable

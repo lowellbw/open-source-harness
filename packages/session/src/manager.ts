@@ -13,6 +13,7 @@ import { buildWebTools } from './tools-web.js'
 import { buildImageTools } from './tools-image.js'
 import { buildDocumentTools } from './tools-documents.js'
 import { buildPythonTools } from './tools-python.js'
+import { buildBrowserTools } from './tools-browser.js'
 import { buildSkillTools, loadSkills, skillInstructions, type ParsedSkill, type SkillLoadError } from '@workspace/skills'
 import { initConnectors, type ConnectorConfig, type ConnectorState } from './connectors.js'
 
@@ -79,6 +80,15 @@ export interface SessionManagerConfig {
   skillsPath?: string
   /** Set false to remove Python execution. */
   python?: boolean
+  /**
+   * Browser control. OFF by default.
+   *
+   * Opt-in rather than opt-out because it is the widest capability here: it
+   * reads pages written by other people and can act on them, which makes any
+   * page it visits a potential instruction channel. A deployment should decide
+   * to have it, not discover it.
+   */
+  browser?: boolean
 }
 
 export interface Session {
@@ -237,6 +247,7 @@ export class SessionManager {
       ...(this.config.python === false
         ? {}
         : buildPythonTools({ workspace, approvals, emit })),
+      ...(this.config.browser ? buildBrowserTools({ workspace, approvals, emit }) : {}),
       ...(this.config.images === false
         ? {}
         : buildImageTools({ workspace, gateway, emit })),
