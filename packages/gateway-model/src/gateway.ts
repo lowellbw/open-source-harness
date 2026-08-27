@@ -135,6 +135,21 @@ export class ModelGateway {
     return cost
   }
 
+  /**
+   * Prices usage WITHOUT adding it to the totals.
+   *
+   * For the per-step trace: each step is priced as it finishes, and the turn's
+   * usage is recorded once at the end. Recording per step as well would double
+   * every number the user sees.
+   */
+  priceOnly(
+    alias: string,
+    usage: LanguageModelUsage | undefined,
+    extras: { webSearches?: number } = {},
+  ): CostBuckets {
+    return priceUsageReport(usage, this.catalog.ratesFor(alias), extras)
+  }
+
   totals(): { run: CostBuckets; session: CostBuckets } {
     return { run: this.meter.runTotal(), session: this.meter.sessionTotal() }
   }

@@ -31,6 +31,7 @@ export async function GET(req: Request) {
       inputPerMtok: m.rates.inputPerMtok,
       outputPerMtok: m.rates.outputPerMtok,
       isFloor: m.alias === floor.alias,
+      supportsReasoningEffort: m.supportsReasoningEffort,
     })),
     totals: session.gateway.totals(),
     budget: session.gateway.budget.remaining(),

@@ -34,6 +34,16 @@ export const modelEntrySchema = z.object({
    * it should be the cheapest thing in the catalog.
    */
   alwaysAvailable: z.boolean().default(false),
+  /**
+   * Whether the model honours a reasoning-effort setting.
+   *
+   * Carried per entry so the UI can HIDE the control rather than show one that
+   * silently does nothing — a control that does nothing is worse than an absent
+   * one, because the user believes they changed something.
+   *
+   * Verified from OpenRouter's `supported_parameters`, not assumed.
+   */
+  supportsReasoningEffort: z.boolean().default(false),
 })
 
 export type ModelEntry = z.infer<typeof modelEntrySchema>
@@ -154,6 +164,7 @@ export function defaultCatalog(): ModelCatalog {
       rates: { inputPerMtok: 0.2, outputPerMtok: 1.2, cacheWriteMultiplier: 1.25, cacheReadMultiplier: 0.1, webSearchPerCall: 0.01 },
       enabledForRoles: [],
       alwaysAvailable: true,
+      supportsReasoningEffort: true,
     },
     {
       alias: 'Standard',
@@ -164,6 +175,7 @@ export function defaultCatalog(): ModelCatalog {
       rates: { inputPerMtok: 2, outputPerMtok: 10, cacheWriteMultiplier: 1.25, cacheReadMultiplier: 0.1, webSearchPerCall: 0.01 },
       enabledForRoles: [],
       alwaysAvailable: false,
+      supportsReasoningEffort: true,
     },
     {
       alias: 'Premium',
@@ -174,6 +186,7 @@ export function defaultCatalog(): ModelCatalog {
       rates: { inputPerMtok: 5, outputPerMtok: 25, cacheWriteMultiplier: 1.25, cacheReadMultiplier: 0.1, webSearchPerCall: 0.01 },
       enabledForRoles: ['staff'],
       alwaysAvailable: false,
+      supportsReasoningEffort: true,
     },
     {
       alias: 'Fast',
@@ -184,6 +197,7 @@ export function defaultCatalog(): ModelCatalog {
       rates: { inputPerMtok: 0.38, outputPerMtok: 1.88, cacheWriteMultiplier: 1.25, cacheReadMultiplier: 0.1, webSearchPerCall: 0.01 },
       enabledForRoles: [],
       alwaysAvailable: false,
+      supportsReasoningEffort: true,
     },
   ])
 }

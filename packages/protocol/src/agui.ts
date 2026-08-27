@@ -144,6 +144,17 @@ export function toAgUi(event: WorkspaceEvent, ctx: AgUiContext): BaseEvent[] {
         } as BaseEvent,
       ]
 
+    // These two AG-UI has natively, unlike most of our domain events.
+    case 'step.started':
+      return [
+        { type: EventType.STEP_STARTED, timestamp, stepName: `step-${event.stepNumber}` } as BaseEvent,
+      ]
+
+    case 'step.finished':
+      return [
+        { type: EventType.STEP_FINISHED, timestamp, stepName: `step-${event.stepNumber}` } as BaseEvent,
+      ]
+
     // AG-UI has no subagent concept at 0.0.58 — nor a source or citation
     // event — so these travel as CUSTOM alongside our other domain events.
     case 'subagent.started':

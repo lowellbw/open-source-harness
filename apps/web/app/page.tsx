@@ -6,7 +6,7 @@ import { FilePanel } from '@/components/FilePanel'
 import { ThreadList } from '@/components/ThreadList'
 import { Thread, type Turn } from '@/components/Thread'
 import { Composer } from '@/components/Composer'
-import { TopBar, type ModelInfo } from '@/components/TopBar'
+import { TopBar, type Effort, type ModelInfo } from '@/components/TopBar'
 import { ApprovalPrompt, type Approval } from '@/components/ApprovalPrompt'
 import { ConnectorPanel } from '@/components/ConnectorPanel'
 
@@ -16,6 +16,7 @@ export default function Page() {
   const [turns, setTurns] = useState<Turn[]>([])
   const [models, setModels] = useState<ModelInfo[]>([])
   const [current, setCurrent] = useState('Standard')
+  const [effort, setEffort] = useState<Effort>('medium')
   const [cost, setCost] = useState({ run: 0, session: 0 })
   const [status, setStatus] = useState<'idle' | 'thinking' | 'calling_tool' | 'awaiting_approval' | 'compacting'>('idle')
   const [approval, setApproval] = useState<Approval | null>(null)
@@ -142,12 +143,76 @@ export default function Page() {
             reasoning: '',
             tools: [],
             sources: [],
+            steps: [],
+            subagents: [],
           },
         ])
         break
 
       case 'model.switched':
         setCurrent(event.to)
+        break
+
+      case 'step.started':
+        setTurns((prev) =>
+          withLastAssistant(prev, (turn) => ({
+            ...turn,
+            steps: [
+              ...turn.steps.filter((s) => s.n !== event.stepNumber),
+              { n: event.stepNumber, activeTools: event.activeTools, done: false },
+            ].sort((a, b) => a.n - b.n),
+          })),
+        )
+        break
+
+      case 'step.finished':
+        setTurns((prev) =>
+          withLastAssistant(prev, (turn) => ({
+            ...turn,
+            steps: turn.steps.map((s) =>
+              s.n === event.stepNumber
+                ? {
+                    ...s,
+                    done: true,
+                    toolCalls: event.toolCalls,
+                    durationMs: event.durationMs,
+                    costUsd: event.cost.usd,
+                  }
+                : s,
+            ),
+          })),
+        )
+        break
+
+      case 'subagent.started':
+        setTurns((prev) =>
+          withLastAssistant(prev, (turn) => ({
+            ...turn,
+            subagents: [
+              ...turn.subagents,
+              { id: event.subagentId, task: event.task, done: false },
+            ],
+          })),
+        )
+        break
+
+      case 'subagent.finished':
+        setTurns((prev) =>
+          withLastAssistant(prev, (turn) => ({
+            ...turn,
+            subagents: turn.subagents.map((a) =>
+              a.id === event.subagentId
+                ? {
+                    ...a,
+                    done: true,
+                    costUsd: event.cost.usd,
+                    reportChars: event.reportChars,
+                    stoppedBy: event.stoppedBy,
+                  }
+                : a,
+            ),
+          })),
+        )
         break
 
       case 'source.cited':
@@ -182,15 +247,20 @@ export default function Page() {
       setError(null)
       setBusy(true)
 
-      const userTurn: Turn = { id: `u-${Date.now()}`, role: 'user', text, reasoning: '', tools: [], sources: [] }
-      const assistantTurn: Turn = { id: `a-${Date.now()}`, role: 'assistant', text: '', reasoning: '', tools: [], sources: [] }
+      const userTurn: Turn = { id: `u-${Date.now()}`, role: 'user', text, reasoning: '', tools: [], sources: [], steps: [], subagents: [] }
+      const assistantTurn: Turn = { id: `a-${Date.now()}`, role: 'assistant', text: '', reasoning: '', tools: [], sources: [], steps: [], subagents: [] }
       setTurns((prev) => [...prev, userTurn, assistantTurn])
 
       try {
         const res = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sessionId: threadId, message: text, modelAlias: current }),
+          body: JSON.stringify({
+            sessionId: threadId,
+            message: text,
+            modelAlias: current,
+            reasoningEffort: effort,
+          }),
         })
         if (!res.body) throw new Error('No response stream')
 
@@ -218,7 +288,7 @@ export default function Page() {
         setThreadsVersion((v) => v + 1)
       }
     },
-    [applyEvent, current, refreshModels, threadId],
+    [applyEvent, current, effort, refreshModels, threadId],
   )
 
   const resolveApproval = useCallback(async (approvalId: string, decision: 'allow' | 'deny') => {
@@ -237,6 +307,8 @@ export default function Page() {
         models={models}
         current={current}
         onSelect={setCurrent}
+        effort={effort}
+        onEffort={setEffort}
         cost={cost}
         status={status}
         disabled={busy}
@@ -293,7 +365,16 @@ function toTurn(message: Message): Turn | null {
     .map((part) => part.text)
     .join('\n')
   if (!text) return null
-  return { id: message.id, role: message.role, text, reasoning: '', tools: [], sources: [] }
+  return {
+    id: message.id,
+    role: message.role,
+    text,
+    reasoning: '',
+    tools: [],
+    sources: [],
+    steps: [],
+    subagents: [],
+  }
 }
 
 /** Minimal SSE reader — the payloads are single-line JSON by construction. */

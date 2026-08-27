@@ -63,6 +63,38 @@ export const workspaceEventSchema = z.discriminatedUnion('type', [
   z.object({ ...base, type: z.literal('tool.call.started'), toolCallId: z.string(), name: z.string(), args: z.unknown() }),
   z.object({ ...base, type: z.literal('tool.call.finished'), toolCallId: z.string(), result: z.unknown(), isError: z.boolean() }),
 
+  // ---- steps ----
+  /**
+   * One model request inside a turn.
+   *
+   * A turn that calls three tools is four requests, and until now the UI showed
+   * it as one undifferentiated wait. These carry what actually varies per step:
+   * which tools were offered, what came back, what it cost. `stepNumber` is
+   * zero-based, matching the SDK.
+   */
+  z.object({
+    ...base,
+    type: z.literal('step.started'),
+    stepNumber: z.number().int().nonnegative(),
+    /** Undefined means every registered tool was sent. */
+    activeTools: z.array(z.string()).optional(),
+  }),
+  z.object({
+    ...base,
+    type: z.literal('step.finished'),
+    stepNumber: z.number().int().nonnegative(),
+    cost: costBucketsSchema,
+    toolCalls: z.number().int().nonnegative(),
+    /** Wall-clock for the step. What a timeline is actually about. */
+    durationMs: z.number().nonnegative().optional(),
+    /**
+     * Optional because the SDK does not populate it consistently: present on
+     * `finish-step` from a live provider, absent from the same part under a
+     * mock. A trace showing nothing beats one showing a fabricated value.
+     */
+    finishReason: z.string().optional(),
+  }),
+
   // ---- subagents ----
   /**
    * A read-only scout, started and finished.

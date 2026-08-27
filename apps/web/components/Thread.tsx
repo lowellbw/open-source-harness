@@ -17,6 +17,24 @@ export interface Citation {
   title: string
 }
 
+export interface Step {
+  n: number
+  activeTools?: string[]
+  toolCalls?: number
+  durationMs?: number
+  costUsd?: number
+  done: boolean
+}
+
+export interface Subagent {
+  id: string
+  task: string
+  costUsd?: number
+  reportChars?: number
+  stoppedBy?: string
+  done: boolean
+}
+
 export interface Turn {
   id: string
   role: 'user' | 'assistant' | 'system'
@@ -24,6 +42,8 @@ export interface Turn {
   reasoning: string
   tools: ToolInvocation[]
   sources: Citation[]
+  steps: Step[]
+  subagents: Subagent[]
 }
 
 export function Thread(props: { turns: Turn[]; status: string }) {
@@ -91,6 +111,9 @@ function TurnView({ turn }: { turn: Turn }) {
   return (
     <div className="mb-6">
       {turn.reasoning && <Collapsible label="Reasoning" body={turn.reasoning} />}
+      {(turn.steps.length > 1 || turn.subagents.length > 0) && (
+        <Timeline steps={turn.steps} subagents={turn.subagents} />
+      )}
       {turn.tools.map((tool) => (
         <ToolView key={tool.id} tool={tool} />
       ))}
@@ -136,6 +159,96 @@ function hostOf(url: string): string {
   } catch {
     return url
   }
+}
+
+/**
+ * What the turn actually did, step by step.
+ *
+ * Hidden for a single-step turn with no subagents, because there is nothing to
+ * decompose: one request, and the tool cards above already show what it called.
+ * It appears exactly when the turn stopped being a single thing.
+ */
+function Timeline({ steps, subagents }: { steps: Step[]; subagents: Subagent[] }) {
+  const [open, setOpen] = useState(false)
+  const totalMs = steps.reduce((sum, s) => sum + (s.durationMs ?? 0), 0)
+  const totalUsd = steps.reduce((sum, s) => sum + (s.costUsd ?? 0), 0)
+  const scoutUsd = subagents.reduce((sum, s) => sum + (s.costUsd ?? 0), 0)
+
+  return (
+    <div className="surface mb-2 rounded-xl border" style={{ borderColor: 'var(--border)' }}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px]"
+      >
+        <span className="mono">{steps.length} steps</span>
+        {subagents.length > 0 && (
+          <span style={{ color: 'var(--accent)' }}>
+            {subagents.length} subagent{subagents.length === 1 ? '' : 's'}
+          </span>
+        )}
+        <span className="muted">{(totalMs / 1000).toFixed(1)}s</span>
+        <span className="muted">${(totalUsd + scoutUsd).toFixed(4)}</span>
+        <span className="muted ml-auto">{open ? 'hide' : 'trace'}</span>
+      </button>
+
+      {open && (
+        <div className="border-t px-3 py-2" style={{ borderColor: 'var(--border)' }}>
+          {steps.map((step) => (
+            <div key={step.n} className="flex items-baseline gap-2 py-0.5 text-[12px]">
+              <span className="mono muted w-10 shrink-0">#{step.n + 1}</span>
+              <span
+                className="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
+                style={{ background: step.done ? 'var(--ok)' : 'var(--muted)' }}
+              />
+              <span className="muted">
+                {step.toolCalls ? `${step.toolCalls} tool call${step.toolCalls === 1 ? '' : 's'}` : 'no tool calls'}
+              </span>
+              {step.activeTools && (
+                <span className="mono muted truncate" title={step.activeTools.join(', ')}>
+                  {step.activeTools.length} offered
+                </span>
+              )}
+              <span className="muted ml-auto shrink-0">
+                {step.durationMs !== undefined && `${(step.durationMs / 1000).toFixed(2)}s`}
+                {step.costUsd !== undefined && ` · $${step.costUsd.toFixed(5)}`}
+              </span>
+            </div>
+          ))}
+
+          {subagents.length > 0 && (
+            <div
+              className="mt-2 border-t pt-2"
+              style={{ borderColor: 'var(--border)' }}
+            >
+              {subagents.map((agent) => (
+                <div key={agent.id} className="py-0.5 text-[12px]">
+                  <div className="flex items-baseline gap-2">
+                    <span
+                      className="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
+                      style={{
+                        background:
+                          agent.stoppedBy && agent.stoppedBy !== 'complete'
+                            ? 'var(--danger)'
+                            : agent.done
+                              ? 'var(--ok)'
+                              : 'var(--muted)',
+                      }}
+                    />
+                    <span style={{ color: 'var(--accent)' }}>subagent</span>
+                    <span className="muted ml-auto shrink-0">
+                      {agent.reportChars !== undefined && `${agent.reportChars} chars`}
+                      {agent.costUsd !== undefined && ` · $${agent.costUsd.toFixed(5)}`}
+                    </span>
+                  </div>
+                  <p className="muted pl-4 leading-snug">{agent.task}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
 }
 
 function ToolView({ tool }: { tool: ToolInvocation }) {

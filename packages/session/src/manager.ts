@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import { Agent, type OrgPolicy } from '@workspace/core'
+import { Agent, type OrgPolicy, type ReasoningEffort } from '@workspace/core'
 import { ModelGateway } from '@workspace/gateway-model'
 import { LocalWorkspace, type Workspace } from '@workspace/workspace'
 import type { WorkspaceEvent } from '@workspace/protocol'
@@ -58,6 +58,7 @@ export interface SessionManagerConfig {
   subagents?: boolean
   /** Scouts read and summarise, which is not premium work. Defaults to Light. */
   scoutModelAlias?: string
+  reasoningEffort?: ReasoningEffort
 }
 
 export interface Session {
@@ -203,6 +204,7 @@ export class SessionManager {
         modelAlias: alias,
         role: policy.role,
         initialHistory: history,
+        ...(this.config.reasoningEffort ? { reasoningEffort: this.config.reasoningEffort } : {}),
         ...(store
           ? {
               onMessage: (message) => {

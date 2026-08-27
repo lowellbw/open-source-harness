@@ -56,6 +56,13 @@ export interface AgentConfig {
    * asked for reach the prompt. Return undefined to send all of them.
    */
   activeTools?: () => string[] | undefined
+  /**
+   * How hard the model should think, where it accepts the instruction.
+   *
+   * Sent only when the catalog entry says the model honours it — passing a
+   * knob a model ignores is how a UI control comes to mean nothing.
+   */
+  reasoningEffort?: ReasoningEffort
   onEvent?: (event: WorkspaceEvent) => void
   persistToolOutput?: (toolCallId: string, output: unknown) => Promise<string>
   summarise?: (messages: Message[]) => Promise<string>
@@ -77,6 +84,8 @@ export interface AgentConfig {
   onMessage?: (message: Message) => void
 }
 
+export type ReasoningEffort = 'low' | 'medium' | 'high'
+
 export interface TurnResult {
   text: string
   runId: string
@@ -89,10 +98,12 @@ export class Agent {
   private history: Message[] = []
   private threadId = randomUUID()
   private currentAlias: string
+  private effort: ReasoningEffort | undefined
 
   constructor(private readonly config: AgentConfig) {
     this.pin = new PolicyPin(config.policy)
     this.currentAlias = config.modelAlias
+    this.effort = config.reasoningEffort
     // Copied, not aliased: the caller's array is usually the store's return
     // value, and appending to it as a side effect of running a turn is the kind
     // of shared-mutable-state bug that only shows up under a second session.
@@ -101,6 +112,11 @@ export class Agent {
 
   getHistory(): Message[] {
     return this.history
+  }
+
+  /** Changes thinking effort for subsequent turns. */
+  setReasoningEffort(effort: ReasoningEffort | undefined): void {
+    this.effort = effort
   }
 
   /**
@@ -181,6 +197,8 @@ export class Agent {
       // meter reads it.
       const providerToolNames = Object.keys(resolved.providerTools)
       let webSearches = 0
+      let stepNumber = 0
+      let toolCallsThisStep = 0
 
       const result = streamText({
         model: resolved.model,
@@ -188,6 +206,12 @@ export class Agent {
         stopWhen: stepCountIs(this.config.maxSteps ?? 12),
         instructions: toInstructions(this.pin.messages()),
         messages: toModelMessages(this.history),
+
+        // Only where the model actually honours it. `supportsReasoningEffort`
+        // comes from the provider's own parameter list, not from a guess.
+        ...(this.effort && resolved.entry.supportsReasoningEffort
+          ? { providerOptions: { openrouter: { reasoning: { effort: this.effort } } } }
+          : {}),
 
         prepareStep: async ({ messages }) => {
           // Ceiling first: refusing the next call is what bounds spend, since a
@@ -230,6 +254,14 @@ export class Agent {
           // moment a connector is configured.
           const active = this.config.activeTools?.()
 
+          this.emit({
+            type: 'step.started',
+            runId,
+            ts: Date.now(),
+            stepNumber,
+            ...(active ? { activeTools: [...active, ...providerToolNames] } : {}),
+          })
+
           return {
             // Rebuilt from source every step. History never holds the only
             // copy, so no compaction pass can lose it.
@@ -266,7 +298,32 @@ export class Agent {
         } else if (part.type === 'finish-step') {
           // Summed per step rather than read from the final total: the raw
           // provider payload the count lives in does not survive aggregation.
-          webSearches += serverWebSearches(part.usage)
+          const searchesThisStep = serverWebSearches(part.usage)
+          webSearches += searchesThisStep
+
+          // Priced here rather than waiting for the turn to end, so a long
+          // multi-step turn shows its cost accruing instead of arriving as one
+          // number after the fact.
+          const stepCost = this.config.gateway.priceOnly(this.currentAlias, part.usage, {
+            webSearches: searchesThisStep,
+          })
+
+          const stepTime = (part as { performance?: { stepTimeMs?: number } }).performance
+            ?.stepTimeMs
+
+          this.emit({
+            type: 'step.finished',
+            runId,
+            ts: Date.now(),
+            stepNumber,
+            cost: stepCost,
+            toolCalls: toolCallsThisStep,
+            ...(typeof stepTime === 'number' ? { durationMs: stepTime } : {}),
+            ...(part.finishReason ? { finishReason: part.finishReason } : {}),
+          })
+
+          stepNumber += 1
+          toolCallsThisStep = 0
         } else if (part.type === 'source') {
           if (part.sourceType === 'url') {
             this.emit({
@@ -279,6 +336,7 @@ export class Agent {
             })
           }
         } else if (part.type === 'tool-call') {
+          toolCallsThisStep += 1
           this.emit({
             type: 'tool.call.started',
             runId,

@@ -12,6 +12,16 @@ export interface ModelInfo {
    *  actually being called. */
   upstreamModel?: string
   provider?: string
+  /** Whether the model honours a thinking-effort setting. */
+  supportsReasoningEffort?: boolean
+}
+
+export type Effort = 'low' | 'medium' | 'high'
+
+const EFFORT_LABELS: Record<Effort, string> = {
+  low: 'Quick',
+  medium: 'Balanced',
+  high: 'Careful',
 }
 
 const LABELS: Record<string, string> = {
@@ -26,6 +36,8 @@ export function TopBar(props: {
   models: ModelInfo[]
   current: string
   onSelect: (alias: string) => void
+  effort: Effort
+  onEffort: (effort: Effort) => void
   cost: { run: number; session: number }
   status: keyof typeof LABELS
   disabled: boolean
@@ -56,6 +68,38 @@ export function TopBar(props: {
           ))}
         </select>
       </label>
+
+      {/*
+        Hidden entirely when the model ignores it, rather than shown greyed out
+        or shown and silently discarded. A control that does nothing is worse
+        than an absent one: the user believes they changed something.
+      */}
+      {active?.supportsReasoningEffort && (
+        <div
+          className="surface flex overflow-hidden rounded-md border text-[12px]"
+          style={{ borderColor: 'var(--border)' }}
+          role="group"
+          aria-label="Thinking effort"
+        >
+          {(['low', 'medium', 'high'] as const).map((level) => (
+            <button
+              key={level}
+              onClick={() => props.onEffort(level)}
+              disabled={props.disabled}
+              aria-pressed={props.effort === level}
+              title={`Thinking effort: ${EFFORT_LABELS[level]}`}
+              className="px-2.5 py-1 transition-colors disabled:opacity-50"
+              style={
+                props.effort === level
+                  ? { background: 'var(--accent)', color: '#fff' }
+                  : { color: 'var(--muted)' }
+              }
+            >
+              {EFFORT_LABELS[level]}
+            </button>
+          ))}
+        </div>
+      )}
 
       {active && (
         <span className="muted hidden items-baseline gap-2 text-[12px] lg:inline-flex">
