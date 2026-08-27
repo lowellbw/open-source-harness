@@ -77,7 +77,7 @@ Copy `apps/web/mcp.config.example.json` to `apps/web/mcp.config.json` to connect
 ## Tests
 
 ```bash
-pnpm test          # 249 tests; Docker conformance skips if the daemon is absent
+pnpm test          # 284 tests; Docker conformance skips if the daemon is absent
 pnpm -r typecheck
 ```
 
@@ -98,7 +98,14 @@ The live provider tests are opt-in, since they cost money and need network:
 RUN_LIVE=1 pnpm vitest run packages/core/src/live.test.ts
 RUN_LIVE=1 pnpm vitest run packages/session/src/live-search.test.ts
 RUN_LIVE=1 pnpm vitest run packages/session/src/live-subagents.test.ts
+RUN_LIVE=1 pnpm vitest run packages/session/src/live-steps.test.ts
+RUN_LIVE=1 pnpm vitest run packages/session/src/live-documents.test.ts
 ```
+
+The document one is the interesting one: it builds a deliberately unreadable deck — forty
+bullets on one slide — and asserts that a real reviewer model fails it while the structural
+checks pass. If that test ever goes green on all three gates, the third gate has stopped
+checking anything.
 
 A full live pass costs well under a cent — it runs on the cheapest tier under the budget guard.
 

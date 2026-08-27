@@ -240,7 +240,24 @@ function Timeline({ steps, subagents }: { steps: Step[]; subagents: Subagent[] }
                       {agent.costUsd !== undefined && ` · $${agent.costUsd.toFixed(5)}`}
                     </span>
                   </div>
-                  <p className="muted pl-4 leading-snug">{agent.task}</p>
+                  {/*
+                    Clamped. A subagent's task is a full instruction — the
+                    document reviewer's is a dozen lines — and printing it whole
+                    turns the trace into a wall of prompt. The title attribute
+                    keeps the rest reachable.
+                  */}
+                  <p
+                    className="muted pl-4 leading-snug"
+                    title={agent.task}
+                    style={{
+                      display: '-webkit-box',
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: 'vertical',
+                      overflow: 'hidden',
+                    }}
+                  >
+                    {agent.task}
+                  </p>
                 </div>
               ))}
             </div>

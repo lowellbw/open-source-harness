@@ -87,26 +87,82 @@ run('step trace, live', () => {
     const events: WorkspaceEvent[] = []
     session.listeners.add((e) => events.push(e))
 
-    const reasoningOf = async (effort: 'low' | 'high') => {
+    const runAt = async (effort: 'low' | 'high') => {
       events.length = 0
       session.agent.setReasoningEffort(effort)
-      await session.agent.send(
+      const turn = await session.agent.send(
         'A farmer has 17 sheep. All but 9 run away. How many are left? Think it through.',
       )
       const cost = events.find((e) => e.type === 'cost.updated') as
         | { delta: { reasoningTokens: number } }
         | undefined
-      return cost?.delta.reasoningTokens ?? 0
+      return { turn, reasoning: cost?.delta.reasoningTokens ?? 0 }
     }
 
-    const low = await reasoningOf('low')
-    const high = await reasoningOf('high')
-    console.log(`  reasoning tokens — low: ${low}, high: ${high}`)
+    const low = await runAt('low')
+    const high = await runAt('high')
+    console.log(`  reasoning tokens — low: ${low.reasoning}, high: ${high.reasoning}`)
 
-    // The knob reaches the provider and changes behaviour. Asserting only that
-    // high > low would be flaky; asserting the model reasoned at all under
-    // 'high' proves the parameter was accepted rather than rejected.
-    expect(high).toBeGreaterThan(0)
+    /*
+     * What is asserted is that the provider ACCEPTS the parameter, because
+     * that is the thing that can break: an unsupported knob comes back as a
+     * request error, not as a quieter answer.
+     *
+     * How much the model then chooses to think is its business, and asserting
+     * on it makes the test flaky — a model can answer a riddle with no
+     * reasoning tokens at all under any setting, which it did here on a run
+     * that had produced 19 the time before. That the value is SENT is checked
+     * deterministically in packages/core/src/steps.test.ts.
+     */
+    expect(low.turn.stoppedBy).toBe('complete')
+    expect(high.turn.stoppedBy).toBe('complete')
+    expect(high.turn.text.length).toBeGreaterThan(0)
+
+    await manager.dispose()
+    await fs.rm(dir, { recursive: true, force: true })
+  })
+})
+
+run('a tool that throws, live', () => {
+  it('still reports finished, marked as an error', { timeout: 120_000 }, async () => {
+    /*
+     * `tool-error` is its own stream part, not a `tool-result` with a flag.
+     * Handling only `tool-result` left a failed tool with NO finished event, so
+     * its card stayed on "running" for the rest of the session — the user
+     * watching something that had already thrown, with nothing to say so.
+     *
+     * Found by counting cards against steps in the browser: three tool calls,
+     * two finished. Asserted live because the mock model will not execute a
+     * tool at all, so it cannot produce a tool error.
+     */
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'live-toolerr-'))
+    const manager = new SessionManager({
+      workspaceRoot: path.join(dir, 'ws'),
+      connectors: { approvalsPath: path.join(dir, 'a.json') },
+      defaultModelAlias: 'Light',
+      subagents: false,
+      documents: false,
+      images: false,
+    })
+
+    const session = await manager.get('s1', 'Light')
+    const events: WorkspaceEvent[] = []
+    session.listeners.add((e) => events.push(e))
+
+    // readFile on a path that does not exist rejects inside the tool.
+    await session.agent.send('Call readFile on the path /definitely-not-here.txt exactly once.')
+
+    const started = events.filter((e) => e.type === 'tool.call.started')
+    const finished = events.filter((e) => e.type === 'tool.call.finished') as unknown as {
+      isError: boolean
+    }[]
+
+    console.log(`  started ${started.length}, finished ${finished.length}`)
+    // Every start must have an end. That is the invariant the UI relies on to
+    // stop showing a spinner.
+    expect(started.length).toBeGreaterThan(0)
+    expect(finished.length).toBe(started.length)
+    expect(finished.some((f) => f.isError)).toBe(true)
 
     await manager.dispose()
     await fs.rm(dir, { recursive: true, force: true })

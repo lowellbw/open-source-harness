@@ -1,4 +1,5 @@
 import { getSession } from '@/lib/session'
+import { ARTIFACT_CSP } from '@/lib/serving'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -30,22 +31,6 @@ export const dynamic = 'force-dynamic'
  * `frame-ancestors 'self'` stops the route being embedded by anyone else.
  */
 
-const CSP = [
-  "default-src 'none'",
-  // An artifact is inline script and inline style by construction.
-  "script-src 'unsafe-inline' 'unsafe-eval'",
-  "style-src 'unsafe-inline'",
-  // Inlined data only. No remote images, so no pixel that phones home.
-  "img-src data: blob:",
-  "font-src data:",
-  "media-src data: blob:",
-  // The important one. Never widen this.
-  "connect-src 'none'",
-  "form-action 'none'",
-  "base-uri 'none'",
-  "frame-ancestors 'self'",
-  "sandbox allow-scripts",
-].join('; ')
 
 const RENDERABLE = new Set(['html', 'htm', 'svg'])
 
@@ -78,7 +63,7 @@ export async function GET(req: Request) {
   return new Response(body, {
     headers: {
       'Content-Type': extension === 'svg' ? 'image/svg+xml; charset=utf-8' : 'text/html; charset=utf-8',
-      'Content-Security-Policy': CSP,
+      'Content-Security-Policy': ARTIFACT_CSP,
       // Without this a file the model named `.html` but filled with something
       // else could still be sniffed into an executable type.
       'X-Content-Type-Options': 'nosniff',

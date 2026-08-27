@@ -1,4 +1,5 @@
 import { getSession } from '@/lib/session'
+import { inlineType } from '@/lib/serving'
 
 export const runtime = 'nodejs'
 
@@ -11,17 +12,51 @@ export async function GET(req: Request) {
   const download = url.searchParams.get('download') === '1'
   const session = await getSession(sessionId)
 
+  const name = target.split('/').pop() ?? 'file'
+
   if (download) {
     const bytes = await session.workspace.readBytes(target)
     return new Response(new Uint8Array(bytes), {
       headers: {
         'Content-Type': 'application/octet-stream',
-        'Content-Disposition': `attachment; filename="${target.split('/').pop() ?? 'file'}"`,
+        'Content-Disposition': `attachment; filename="${name}"`,
+        'X-Content-Type-Options': 'nosniff',
       },
     })
   }
 
-  const entries = await session.workspace.list(target)
+  /*
+   * A file, asked for inline — a rendered page in the artifact pane, an image
+   * the agent made, a Markdown body.
+   *
+   * Without this the route fell through to `list()` on a file path and threw,
+   * which is why every preview image in the pane was broken.
+   *
+   * `inlineType` is deliberately narrow. Serving workspace content from this
+   * origin with a Content-Type the browser will EXECUTE is stored XSS by
+   * another name — the files are written by a model, from material that can
+   * include a fetched web page. HTML and SVG get no inline type here; they
+   * render through /artifact, which has the sandbox and the CSP for it.
+   */
+  const inline = inlineType(name)
+  if (inline) {
+    const bytes = await session.workspace.readBytes(target).catch(() => null)
+    if (bytes) {
+      return new Response(new Uint8Array(bytes), {
+        headers: {
+          'Content-Type': inline,
+          'Content-Disposition': `inline; filename="${name}"`,
+          'X-Content-Type-Options': 'nosniff',
+          'Cache-Control': 'no-store',
+        },
+      })
+    }
+  }
+
+  const entries = await session.workspace.list(target).catch(() => null)
+  if (!entries) {
+    return Response.json({ error: 'Not a directory, and not previewable' }, { status: 404 })
+  }
   return Response.json({
     path: target,
     // Internal bookkeeping, not the user's work.

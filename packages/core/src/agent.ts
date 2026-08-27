@@ -379,6 +379,24 @@ export class Agent {
             result: part.output,
             isError: false,
           })
+        } else if (part.type === 'tool-error') {
+          /*
+           * A separate stream part, not a `tool-result` with a flag.
+           *
+           * Handling only `tool-result` left a failed tool with no finished
+           * event at all, so its card stayed on "running" for the rest of the
+           * session — the user watching a tool that had already thrown, with
+           * nothing to say it had. Found by counting cards against steps in the
+           * browser: three tool calls, two finished.
+           */
+          this.emit({
+            type: 'tool.call.finished',
+            runId,
+            ts: Date.now(),
+            toolCallId: part.toolCallId,
+            result: { error: part.error instanceof Error ? part.error.message : String(part.error) },
+            isError: true,
+          })
         }
       }
 
