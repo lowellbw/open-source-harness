@@ -156,6 +156,7 @@ struct KeychainStore: Sendable {
 /// typo cannot silently create a second, invisible item.
 enum KeychainAccount {
     static let providerAPIKey = "provider-api-key"
-    /// Brave Search. Optional: without it the sidecar does not offer the search tool.
+    /// Brave Search. Optional: without it search falls back to the provider-native
+    /// tool, so this buys a different sub-processor rather than the feature.
     static let searchAPIKey = "search-api-key"
 }

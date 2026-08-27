@@ -271,9 +271,14 @@ struct WorkspaceAPI: Sendable {
 
 enum WorkspaceAPIError: LocalizedError {
     case http(status: Int, body: String)
+    /// Asked for something before the sidecar had a port. Reachable from the pane,
+    /// which the user can open during a restart.
+    case notConnected
 
     var errorDescription: String? {
         switch self {
+        case .notConnected:
+            return "The workspace is not running yet."
         case .http(let status, let body):
             if status == 401 {
                 return "The workspace rejected the shell's credentials. Restart the sidecar."

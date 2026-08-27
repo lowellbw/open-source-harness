@@ -100,7 +100,7 @@ enum SidecarFailure: Error, Equatable {
 /// absent for a different reason, and the launch path should not have to care which.
 struct SidecarSecrets {
     var providerAPIKey: String?
-    /// Optional. Absent means the sidecar does not offer web search at all.
+    /// Optional. Absent means search runs through the provider instead of Brave.
     var searchAPIKey: String?
 
     static let none = SidecarSecrets()

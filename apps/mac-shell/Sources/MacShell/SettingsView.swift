@@ -32,14 +32,14 @@ private struct KeySettings: View {
                 account: KeychainAccount.searchAPIKey,
                 title: "Search key",
                 prompt: "Brave Search API key",
-                // The Mac app rendered citations for a while with no way to produce
-                // one: the shell never passed a search key, so `BRAVE_API_KEY` was
-                // never set and the tool was simply absent from the model's toolset.
-                // A missing optional key degrades to "the model never searched",
-                // which is indistinguishable from "the model chose not to".
-                footer: "Optional. Without it the web-search tool is not offered to the "
-                    + "model at all, so answers are asserted rather than sourced — and "
-                    + "nothing on screen says so."
+                // Genuinely optional. With no key the gateway attaches the
+                // provider-native search tool instead, so search still works on the
+                // provider key alone — it is billed per call rather than per token,
+                // which is why `CostBuckets.webSearches` is a count and stays out of
+                // the token total. A Brave key buys one fewer sub-processor to
+                // disclose (§6.4), not the feature itself.
+                footer: "Optional. Without it search runs through the provider instead, "
+                    + "billed per call rather than per token."
             )
         }
         .formStyle(.grouped)

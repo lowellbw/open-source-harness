@@ -108,7 +108,6 @@ private struct WorkspaceView: View {
 
     @State private var draft = ""
     @State private var showSessions = true
-    @State private var showInspector = true
 
     var body: some View {
         HSplitView {
@@ -121,9 +120,13 @@ private struct WorkspaceView: View {
                 .frame(minWidth: 440, maxWidth: .infinity)
                 .background(.dsCanvas)
 
-            if showInspector {
-                SidebarView()
-                    .frame(minWidth: Layout.inspectorMin, idealWidth: Layout.inspectorIdeal, maxWidth: Layout.inspectorMax)
+            // On demand, not permanent. A document the agent just wrote opens it;
+            // otherwise the conversation gets the whole window, which is what makes
+            // this read like a chat app rather than an IDE.
+            if conversation.isPaneVisible {
+                ArtifactPane()
+                    .frame(minWidth: Layout.paneMin, idealWidth: Layout.paneIdeal, maxWidth: Layout.paneMax)
+                    .transition(.move(edge: .trailing))
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -138,7 +141,7 @@ private struct WorkspaceView: View {
         // conversation column instead, which is also where the reader is looking.
         .navigationTitle("")
         .toolbar {
-            WorkspaceToolbar(showSessions: $showSessions, showInspector: $showInspector)
+            WorkspaceToolbar(showSessions: $showSessions)
         }
         // A sheet rather than an inline banner: an approval is modal in fact — the
         // run is blocked on it server-side — so it should be modal on screen too.
@@ -173,7 +176,8 @@ private struct WorkspaceView: View {
                 )
             }
             TranscriptView()
-            Divider()
+            // No divider. The composer is a card with its own edge now, and a rule
+            // above it drew a second line a few points away from the first.
             ComposerView(text: $draft, focusRequest: services.composerFocusNonce)
         }
     }
@@ -187,14 +191,16 @@ private struct WorkspaceView: View {
 
 /// The window toolbar.
 ///
-/// Model, state and spend, in that order. All three are things the user needs at a
-/// glance and never needs to hunt for, which is the definition of toolbar content —
-/// and all three are things a chat UI usually buries.
+/// Deliberately sparse: two toggles, the run state, and a new conversation.
+///
+/// The model picker and the thinking-effort control used to live here, in the middle
+/// of the title bar. They have moved into the composer's footer, next to the message
+/// they apply to — both are per-turn decisions, and the title bar is the one part of
+/// the window that is furthest from where the decision is being made.
 private struct WorkspaceToolbar: ToolbarContent {
     @EnvironmentObject private var services: AppServices
     @EnvironmentObject private var conversation: ConversationStore
     @Binding var showSessions: Bool
-    @Binding var showInspector: Bool
 
     var body: some ToolbarContent {
         ToolbarItem(placement: .navigation) {
@@ -210,46 +216,6 @@ private struct WorkspaceToolbar: ToolbarContent {
             StatusPill(state: conversation.status, isStreaming: conversation.isStreaming)
         }
 
-        ToolbarItem(placement: .principal) {
-            Picker("Model", selection: Binding(
-                get: { conversation.selectedModel },
-                set: { conversation.selectedModel = $0 }
-            )) {
-                ForEach(conversation.models) { model in
-                    // The floor is labelled because it is the one model the role can
-                    // never lose. A picker that can silently empty itself is worse
-                    // than one that says where the bottom is.
-                    Text(model.isFloor ? "\(model.alias) (always available)" : model.alias)
-                        .tag(model.alias)
-                }
-            }
-            .pickerStyle(.menu)
-            .frame(minWidth: 130)
-            .disabled(conversation.models.isEmpty)
-            .help("Switching mid-session takes effect at the next compaction boundary.")
-        }
-
-        // Hidden, not disabled, where the model ignores it. A control that does
-        // nothing is worse than an absent one: the user believes they changed
-        // something.
-        if conversation.supportsReasoningEffort {
-            ToolbarItem(placement: .principal) {
-                Picker("Thinking effort", selection: Binding(
-                    get: { conversation.reasoningEffort },
-                    set: { conversation.reasoningEffort = $0 }
-                )) {
-                    ForEach(WorkspaceAPI.ReasoningEffort.allCases) { effort in
-                        Text(effort.label).tag(effort)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .frame(maxWidth: 220)
-                .disabled(conversation.isStreaming)
-                .help("How hard the model thinks before answering. Applies to your next message.")
-            }
-        }
-
         ToolbarItem(placement: .primaryAction) {
             Button {
                 conversation.startNewSession()
@@ -261,11 +227,11 @@ private struct WorkspaceToolbar: ToolbarContent {
 
         ToolbarItem(placement: .primaryAction) {
             Button {
-                showInspector.toggle()
+                withAnimation(Motion.disclose) { conversation.togglePane() }
             } label: {
-                Label("Workspace", systemImage: "sidebar.trailing")
+                Label("Documents", systemImage: "sidebar.trailing")
             }
-            .help("Show or hide the workspace files and connectors")
+            .help("Show or hide documents and workspace files")
         }
     }
 }

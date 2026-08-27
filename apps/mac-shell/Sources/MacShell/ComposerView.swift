@@ -26,7 +26,7 @@ struct ComposerView: View {
                 InlineBanner(tone: .error, message: message) { conversation.dismissError() }
             }
 
-            HStack(alignment: .bottom, spacing: Space.s) {
+            VStack(spacing: Space.s) {
                 ZStack(alignment: .topLeading) {
                     if text.isEmpty {
                         Text(conversation.canSend ? "Ask for something…" : "Waiting for the workspace…")
@@ -49,12 +49,71 @@ struct ComposerView: View {
                     )
                     .frame(height: measuredHeight)
                 }
-                .background(Color.dsSurface, in: Radius.shape(Radius.surface))
-                .overlay(
-                    Radius.shape(Radius.surface)
-                        .strokeBorder(Color.dsBorder)
-                )
+                controls
+            }
+            .padding(Space.s)
+            // One card around the field and its controls, rather than a bordered
+            // field with loose controls beside it. The model and the effort belong to
+            // the message being written, and drawing them inside its boundary is what
+            // says so.
+            .background(Color.dsSurface, in: Radius.shape(Radius.card))
+            .overlay(Radius.shape(Radius.card).strokeBorder(Color.dsBorder))
+            // The same reading column the transcript uses, centred the same way. A
+            // composer that spans the window while the messages above it stop at 768pt
+            // makes the input look like it belongs to a different app.
+            .frame(maxWidth: Layout.contentMaxWidth)
+            .frame(maxWidth: .infinity, alignment: .center)
+            .padding(.horizontal, Space.l)
+            .padding(.vertical, Space.m)
+        }
+        .background(.dsCanvas)
+    }
 
+    /// The footer row: what will answer, how hard it will think, and send.
+    private var controls: some View {
+        HStack(spacing: Space.s) {
+            Picker("Model", selection: Binding(
+                get: { conversation.selectedModel },
+                set: { conversation.selectedModel = $0 }
+            )) {
+                ForEach(conversation.models) { model in
+                    // The floor is labelled because it is the one model the role can
+                    // never lose. A picker that can silently empty itself is worse
+                    // than one that says where the bottom is.
+                    Text(model.isFloor ? "\(model.alias) (always available)" : model.alias)
+                        .tag(model.alias)
+                }
+            }
+            .pickerStyle(.menu)
+            .labelsHidden()
+            .fixedSize()
+            .controlSize(.small)
+            .disabled(conversation.models.isEmpty)
+            .help("Switching mid-session takes effect at the next compaction boundary.")
+
+            // Hidden, not disabled, where the model ignores it. A control that does
+            // nothing is worse than an absent one: the user believes they changed
+            // something.
+            if conversation.supportsReasoningEffort {
+                Picker("Thinking effort", selection: Binding(
+                    get: { conversation.reasoningEffort },
+                    set: { conversation.reasoningEffort = $0 }
+                )) {
+                    ForEach(WorkspaceAPI.ReasoningEffort.allCases) { effort in
+                        Text(effort.label).tag(effort)
+                    }
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .fixedSize()
+                .controlSize(.small)
+                .disabled(conversation.isStreaming)
+                .help("How hard the model thinks before answering. Applies to your next message.")
+            }
+
+            Spacer(minLength: Space.s)
+
+            Group {
                 if conversation.isStreaming {
                     Button(action: conversation.cancelTurn) {
                         Label("Stop", systemImage: "stop.fill")
@@ -75,10 +134,7 @@ struct ComposerView: View {
                     .help("Send (Return)")
                 }
             }
-            .padding(.horizontal, Space.l)
-            .padding(.vertical, Space.m)
         }
-        .chromeSurface()
     }
 
     private func submit() {

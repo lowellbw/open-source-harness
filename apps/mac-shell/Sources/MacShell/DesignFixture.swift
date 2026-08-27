@@ -23,6 +23,9 @@ struct DesignFixture {
     var runCost = CostBuckets()
     var sessionCost = CostBuckets()
     var budgetRemaining: Double?
+    /// Canned bytes for the document pane, keyed by workspace path.
+    var files: [String: Data] = [:]
+    var previewPath: String?
 
     /// The default gallery scenario: a finished turn with prose, reasoning, a
     /// succeeded tool, a failed tool and a running tool, then a system notice, then
@@ -152,6 +155,11 @@ struct DesignFixture {
         )
         fixture.runCost = CostBuckets()
         fixture.budgetRemaining = 15
+        // The document the agent just wrote — the case the pane exists for. Exercises
+        // the same block types the transcript renderer has to handle, because they are
+        // the same renderer.
+        fixture.files = ["/notes.md": Data(documentMarkdown.utf8)]
+        fixture.previewPath = "/notes.md"
         return fixture
     }()
 
@@ -173,6 +181,25 @@ struct DesignFixture {
         )
         return fixture
     }
+
+    /// What a written document looks like in the pane.
+    private static let documentMarkdown =
+        "# Q1 revenue by region\n\n"
+        + "Revenue is stored as text in the source export, so every figure below was "
+        + "parsed from a string with thousands separators stripped.\n\n"
+        + "## Headline\n\n"
+        + "- EMEA grew **13.9%** quarter on quarter\n"
+        + "- AMER remains the largest single region\n"
+        + "- APAC is the fastest growing, from the smallest base\n\n"
+        + "| Region | Q1 | Q4 | Change |\n"
+        + "|---|---|---|---|\n"
+        + "| EMEA | 184,320 | 209,880 | +13.9% |\n"
+        + "| AMER | 271,004 | 298,110 | +10.0% |\n"
+        + "| APAC | 96,510 | 118,400 | +22.7% |\n\n"
+        + "> Figures are unaudited and exclude intercompany eliminations.\n\n"
+        + "```python\n"
+        + "df[\"revenue\"] = df[\"revenue\"].str.replace(\",\", \"\", regex=False).astype(float)\n"
+        + "```\n"
 
     // Kept as separate constants so the literals above stay readable.
 

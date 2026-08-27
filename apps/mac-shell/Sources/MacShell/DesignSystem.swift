@@ -206,9 +206,12 @@ enum Layout {
     static let sidebarMin: CGFloat = 220
     static let sidebarIdeal: CGFloat = 288
     static let sidebarMax: CGFloat = 360
-    static let inspectorMin: CGFloat = 240
-    static let inspectorIdeal: CGFloat = 288
-    static let inspectorMax: CGFloat = 420
+    /// The document pane. Wider than the old always-on inspector was, because it now
+    /// holds a rendered document rather than a file list — a paragraph at 288pt wraps
+    /// every four or five words.
+    static let paneMin: CGFloat = 320
+    static let paneIdeal: CGFloat = 420
+    static let paneMax: CGFloat = 620
     /// The user bubble caps at 85% of the column. Computed, not measured — no
     /// `GeometryReader` in a view that re-lays-out on every streaming delta.
     static let bubbleGutter: CGFloat = contentMaxWidth * 0.15

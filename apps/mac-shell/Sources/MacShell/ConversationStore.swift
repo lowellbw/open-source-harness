@@ -130,6 +130,24 @@ final class ConversationStore: ObservableObject {
     @Published var expandedTimelines: Set<String> = []
 
     @Published private(set) var entries: [String: [DirEntry]] = [:]
+
+    /// The right-hand pane. `nil` is hidden, and hidden is the default: a pane that
+    /// is always open spends most of its life describing its own emptiness.
+    @Published private(set) var paneMode: PaneMode = .files
+    @Published private(set) var isPaneVisible = false
+    /// The last thing worth previewing, kept so the Document tab can come back to it
+    /// after a trip through Files.
+    @Published private(set) var lastPreview: String?
+    #if DEBUG
+    /// Canned file contents, set only by `applyDesignFixture`.
+    var fixtureFiles: [String: Data] = [:]
+    #endif
+
+    /// Whether a newly written document takes over the pane. On by default — that is
+    /// the behaviour that makes documents feel like they belong to the conversation —
+    /// and pinnable, because being yanked off the file you are reading is worse than
+    /// having to open the next one yourself.
+    @Published var followsNewDocuments = true
     @Published private(set) var expandedDirectories: Set<String> = ["/"]
     @Published private(set) var connectors = ConnectorStatus()
 
@@ -200,6 +218,12 @@ final class ConversationStore: ObservableObject {
         models = fixture.models
         selectedModel = fixture.selectedModel
         entries = fixture.entries
+        fixtureFiles = fixture.files
+        if let path = fixture.previewPath {
+            lastPreview = path
+            paneMode = .preview(path)
+            isPaneVisible = true
+        }
         connectors = fixture.connectors
         errorMessage = fixture.errorMessage
         pendingApproval = fixture.pendingApproval
@@ -241,6 +265,12 @@ final class ConversationStore: ObservableObject {
         expandedTimelines = []
         entries = [:]
         expandedDirectories = ["/"]
+        // A document belongs to the conversation that produced it. Carrying the pane
+        // across to a new one would show the last thread's work under this thread's
+        // title, which reads as the new conversation having already done something.
+        lastPreview = nil
+        paneMode = .files
+        isPaneVisible = false
         scrollAnchor = turns.last?.id
 
         rebuildClient()
@@ -471,8 +501,14 @@ final class ConversationStore: ObservableObject {
             runCost = run
             sessionCost = session
 
-        case .fileChanged:
+        case .fileChanged(let path, let op):
             Task { await refreshFiles(path: "/") }
+            // A deletion is not a document to show, and a file the pane cannot render
+            // would replace something readable with "no inline preview for this type".
+            if op != .deleted, ArtifactKind(path: path) != .unsupported {
+                lastPreview = path
+                if followsNewDocuments { showPane(.preview(path)) }
+            }
 
         case .runError(let message):
             errorMessage = message
@@ -550,6 +586,53 @@ final class ConversationStore: ObservableObject {
     }
 
     // MARK: - Files
+
+    func showPane(_ mode: PaneMode) {
+        if case .preview(let path) = mode { lastPreview = path }
+        paneMode = mode
+        isPaneVisible = true
+    }
+
+    func togglePane() {
+        if isPaneVisible {
+            isPaneVisible = false
+        } else {
+            showPane(lastPreview.map(PaneMode.preview) ?? .files)
+        }
+    }
+
+    func hidePane() { isPaneVisible = false }
+
+    /// Bytes for the preview pane.
+    func download(path: String) async throws -> Data {
+        #if DEBUG
+        // The Design Gallery has no sidecar, so a fixture supplies its own bytes.
+        // Without this the document pane can only ever be captured in its failure
+        // state, which is the one state that does not need designing.
+        if let canned = fixtureFiles[path] { return canned }
+        #endif
+        guard let api else { throw WorkspaceAPIError.notConnected }
+        return try await api.download(path: path)
+    }
+
+    /// Writes a workspace file to a temporary location so Finder and the default
+    /// application can open it. The workspace itself is not a local directory the
+    /// user can reach — it is whatever the execution plane says it is — so handing
+    /// `NSWorkspace` a workspace path would open nothing.
+    func materialise(path: String) async -> URL? {
+        do {
+            let bytes = try await download(path: path)
+            let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+                .appendingPathComponent("agentic-preview", isDirectory: true)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let destination = directory.appendingPathComponent((path as NSString).lastPathComponent)
+            try bytes.write(to: destination, options: .atomic)
+            return destination
+        } catch {
+            errorMessage = "Could not open that file: \(error.localizedDescription)"
+            return nil
+        }
+    }
 
     func refreshFiles(path: String) async {
         guard let api else { return }
@@ -648,6 +731,12 @@ final class ConversationStore: ObservableObject {
         expandedTimelines = []
         entries = [:]
         expandedDirectories = ["/"]
+        // A document belongs to the conversation that produced it. Carrying the pane
+        // across to a new one would show the last thread's work under this thread's
+        // title, which reads as the new conversation having already done something.
+        lastPreview = nil
+        paneMode = .files
+        isPaneVisible = false
 
         rebuildClient()
     }

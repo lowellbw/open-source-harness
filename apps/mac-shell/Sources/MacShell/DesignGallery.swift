@@ -104,15 +104,17 @@ struct DesignGalleryWindow: View {
                         .card(radius: Radius.card)
                 }
 
-                GallerySection("Workspace inspector") {
-                    SidebarView()
+                GallerySection("Document pane") {
+                    ArtifactPane()
                         .environmentObject(model.conversation)
                         .environmentObject(AppServices.shared)
-                        .frame(width: Layout.inspectorIdeal, height: 420)
+                        .frame(width: Layout.paneIdeal, height: 420)
                         .card(radius: Radius.card)
                 }
         }
     }
+
+
     /// Both shapes of the approval sheet, side by side.
     ///
     /// The pair is the point: the third button appears only when the request carries

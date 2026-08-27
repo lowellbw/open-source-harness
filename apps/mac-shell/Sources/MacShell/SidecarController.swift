@@ -130,6 +130,18 @@ final class SidecarController: ObservableObject {
     /// deployments have no local key at all, and the ones that do would rather see
     /// the sidecar report a missing credential than see no window.
     private func readSecrets() async -> SidecarSecrets {
+        // A key already in our own environment wins, and the keychain is never
+        // touched. This is what makes development bearable: the keychain ACL is bound
+        // to the binary's designated requirement, an ad-hoc signature's cdhash changes
+        // on every single rebuild, and the result is a password prompt per launch that
+        // no amount of "Always Allow" can stick to. It also gives CI a way in that
+        // does not involve provisioning a keychain.
+        let fromEnvironment = SidecarSecrets(
+            providerAPIKey: ProcessInfo.processInfo.environment["AGENTIC_PROVIDER_API_KEY"],
+            searchAPIKey: ProcessInfo.processInfo.environment["AGENTIC_SEARCH_API_KEY"]
+        )
+        if !fromEnvironment.environment.isEmpty { return fromEnvironment }
+
         let keychain = self.keychain
         return await Task.detached(priority: .userInitiated) {
             SidecarSecrets(
