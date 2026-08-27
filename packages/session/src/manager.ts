@@ -12,6 +12,7 @@ import { buildSubagentTools } from '@workspace/subagents'
 import { buildWebTools } from './tools-web.js'
 import { buildImageTools } from './tools-image.js'
 import { buildDocumentTools } from './tools-documents.js'
+import { buildPythonTools } from './tools-python.js'
 import { buildSkillTools, loadSkills, skillInstructions, type ParsedSkill, type SkillLoadError } from '@workspace/skills'
 import { initConnectors, type ConnectorConfig, type ConnectorState } from './connectors.js'
 
@@ -76,6 +77,8 @@ export interface SessionManagerConfig {
    * the whole of its trust story.
    */
   skillsPath?: string
+  /** Set false to remove Python execution. */
+  python?: boolean
 }
 
 export interface Session {
@@ -231,6 +234,9 @@ export class SessionManager {
     const coreTools = {
       ...buildWorkspaceTools({ workspace, approvals, emit }),
       ...(searchProvider ? buildSearchWebTools({ provider: searchProvider }) : {}),
+      ...(this.config.python === false
+        ? {}
+        : buildPythonTools({ workspace, approvals, emit })),
       ...(this.config.images === false
         ? {}
         : buildImageTools({ workspace, gateway, emit })),

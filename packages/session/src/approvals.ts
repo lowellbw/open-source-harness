@@ -21,13 +21,38 @@ export interface PendingApproval {
   reason: string
   irreversible: boolean
   payload: unknown
-  resolve: (decision: 'allow' | 'deny') => void
+  /**
+   * A class of action this approval belongs to, if the user may consent to the
+   * whole class for the session — `python`, `shell`.
+   *
+   * Present so the UI can offer "allow for this session" as a THIRD choice,
+   * beside once and never.
+   */
+  scope?: string
+  resolve: (decision: ApprovalDecision) => void
 }
+
+/**
+ * `session` means allow this, and everything else in the same scope, until the
+ * session ends.
+ *
+ * It exists because of a real tension in §9. Arbitrary code cannot be judged
+ * reversible in advance, so it must be gated; but prompting on every cell of a
+ * data analysis is exactly the pattern §9 warns about — it manufactures consent
+ * instead of obtaining it, and after the fourth prompt nobody is reading.
+ *
+ * The honest resolution is to ask once, clearly, for something the user
+ * understands as a class of action, rather than repeatedly for instances of it.
+ * The grant is per ApprovalGate — one session — and is never written to disk. A
+ * persisted grant is a standing permission nobody remembers giving.
+ */
+export type ApprovalDecision = 'allow' | 'deny' | 'session'
 
 export const DEFAULT_APPROVAL_TIMEOUT_MS = 300_000
 
 export class ApprovalGate {
   private readonly pending = new Map<string, PendingApproval>()
+  private readonly grantedScopes = new Set<string>()
 
   constructor(
     private readonly emit: (event: WorkspaceEvent) => void,
@@ -41,7 +66,16 @@ export class ApprovalGate {
    * alternative — defaulting to allow so the agent isn't blocked — makes the
    * gate decorative.
    */
-  request(reason: string, payload: unknown): Promise<'allow' | 'deny'> {
+  request(
+    reason: string,
+    payload: unknown,
+    options: { scope?: string } = {},
+  ): Promise<'allow' | 'deny'> {
+    // Already consented to this class of action for this session.
+    if (options.scope && this.grantedScopes.has(options.scope)) {
+      return Promise.resolve('allow')
+    }
+
     const approvalId = randomUUID()
 
     return new Promise<'allow' | 'deny'>((resolve) => {
@@ -56,10 +90,15 @@ export class ApprovalGate {
         reason,
         irreversible: true,
         payload,
+        ...(options.scope ? { scope: options.scope } : {}),
         resolve: (decision) => {
           clearTimeout(timer)
           this.pending.delete(approvalId)
-          resolve(decision)
+          if (decision === 'session' && options.scope) {
+            this.grantedScopes.add(options.scope)
+          }
+          // `session` is an allow that also remembers.
+          resolve(decision === 'deny' ? 'deny' : 'allow')
         },
       })
 
@@ -72,16 +111,33 @@ export class ApprovalGate {
         reason,
         irreversible: true,
         payload,
+        ...(options.scope ? { scope: options.scope } : {}),
       })
     })
   }
 
+  /** Scopes consented to for this session. For the UI to show and revoke. */
+  grantedForSession(): string[] {
+    return [...this.grantedScopes]
+  }
+
+  /** Withdraws a session grant. The next action in that scope asks again. */
+  revokeScope(scope: string): void {
+    this.grantedScopes.delete(scope)
+  }
+
   /** Returns false when the id is unknown — already answered, or timed out. */
-  resolve(approvalId: string, decision: 'allow' | 'deny'): boolean {
+  resolve(approvalId: string, decision: ApprovalDecision): boolean {
     const entry = this.pending.get(approvalId)
     if (!entry) return false
     entry.resolve(decision)
-    this.emit({ type: 'approval.resolved', runId: 'ui', ts: Date.now(), approvalId, decision })
+    this.emit({
+      type: 'approval.resolved',
+      runId: 'ui',
+      ts: Date.now(),
+      approvalId,
+      decision: decision === 'deny' ? 'deny' : 'allow',
+    })
     return true
   }
 

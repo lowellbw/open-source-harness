@@ -5,6 +5,15 @@ export interface Approval {
   reason: string
   payload: unknown
   irreversible: boolean
+  /** Present when the whole class of action can be consented to at once. */
+  scope?: string
+}
+
+export type ApprovalDecision = 'allow' | 'deny' | 'session'
+
+const SCOPE_LABELS: Record<string, string> = {
+  python: 'Python',
+  shell: 'shell commands',
 }
 
 /**
@@ -16,8 +25,11 @@ export interface Approval {
  */
 export function ApprovalPrompt(props: {
   approval: Approval
-  onResolve: (approvalId: string, decision: 'allow' | 'deny') => void
+  onResolve: (approvalId: string, decision: ApprovalDecision) => void
 }) {
+  const scope = props.approval.scope
+  const scopeLabel = scope ? (SCOPE_LABELS[scope] ?? scope) : undefined
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-6">
       <div
@@ -35,7 +47,7 @@ export function ApprovalPrompt(props: {
           This cannot be undone. Nothing happens until you choose.
         </p>
 
-        <div className="mt-4 flex justify-end gap-2">
+        <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
           <button
             autoFocus
             onClick={() => props.onResolve(props.approval.approvalId, 'deny')}
@@ -44,12 +56,34 @@ export function ApprovalPrompt(props: {
           >
             Deny
           </button>
+
+          {/*
+            The third option, and the reason it exists.
+
+            Arbitrary code cannot be judged reversible in advance, so it has to
+            be gated — but a prompt on every cell of an analysis is the pattern
+            §9 warns about: it manufactures consent rather than obtaining it,
+            and by the fourth prompt nobody is reading. Consenting to a class of
+            action once, knowingly, is the honest version. It lasts for this
+            session only and is never written to disk.
+          */}
+          {scopeLabel && (
+            <button
+              onClick={() => props.onResolve(props.approval.approvalId, 'session')}
+              className="surface rounded-lg border px-3 py-1.5 text-[13px]"
+              style={{ borderColor: 'var(--accent)', color: 'var(--accent)' }}
+              title={`Stop asking about ${scopeLabel} until this session ends`}
+            >
+              Allow {scopeLabel} this session
+            </button>
+          )}
+
           <button
             onClick={() => props.onResolve(props.approval.approvalId, 'allow')}
             className="rounded-lg px-3 py-1.5 text-[13px] font-medium text-white"
             style={{ background: 'var(--danger)' }}
           >
-            Allow
+            Allow once
           </button>
         </div>
       </div>

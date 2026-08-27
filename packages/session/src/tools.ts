@@ -28,6 +28,7 @@ export const BUILTIN_TOOL_NAMES = [
   'searchFiles',
   'findFiles',
   'fetchUrl',
+  'runPython',
 ] as const
 
 export interface ToolContext {
@@ -100,7 +101,14 @@ export function buildWorkspaceTools(ctx: ToolContext): ToolSet {
         // Always gated. A shell can do anything the workspace backing allows,
         // and unlike a write there is no cheap way to tell in advance whether a
         // given command destroys something.
-        const decision = await ctx.approvals.request(`Run: ${command}`, { command })
+        const decision = await ctx.approvals.request(
+          `Run: ${command}`,
+          { command },
+          // Consentable for the session, like Python. A shell command is the
+          // same bargain: it cannot be judged reversible in advance, and asking
+          // twenty times is how a gate becomes a habit rather than a decision.
+          { scope: 'shell' },
+        )
         if (decision === 'deny') return { ok: false, reason: 'Denied by user' }
 
         const result = await ctx.workspace.exec(command, { timeoutMs: commandTimeout })

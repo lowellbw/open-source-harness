@@ -152,6 +152,13 @@ export const workspaceEventSchema = z.discriminatedUnion('type', [
     reason: z.string(),
     irreversible: z.boolean(),
     payload: z.unknown(),
+    /**
+     * The class of action, when the user may consent to all of it for the
+     * session rather than to this instance. Lets the UI offer a third choice
+     * beside once and never — which is what makes running code usable without
+     * prompting on every cell.
+     */
+    scope: z.string().optional(),
   }),
   z.object({
     ...base,

@@ -42,9 +42,10 @@ is absent.
   model ID, with per-role gating and a cheap always-available floor.
 - **A live cost meter**, four buckets, priced per model, with a hard spend ceiling enforced in
   the gateway rather than the UI.
-- **Approvals before anything irreversible.** Overwriting a file or running a command stops and
-  asks; creating a new file does not, because prompting on everything trains people to click
-  through without reading.
+- **Approvals before anything irreversible**, with a third answer beside once and never:
+  *allow this class of action for this session*. Arbitrary code cannot be judged reversible in
+  advance so it must be gated, but a prompt on every cell of an analysis manufactures consent
+  rather than obtaining it. The grant lasts one session and is never written to disk.
 - **Context compaction** that elides losslessly before it summarises, and re-injects org policy
   on every single request so constraints survive compaction.
 - **Web search**, either way round. With `BRAVE_API_KEY` it is an explicit tool call: visible
@@ -67,6 +68,10 @@ is absent.
   Markdown, images, agent-written pages in a sandboxed frame, and page images for Office files.
 - **Images in and out.** Generated through the same gateway as everything else, so image spend is
   metered like any other; attached images and PDFs go to the model as real image and file parts.
+- **Python for data analysis.** pandas, numpy, matplotlib and openpyxl in the workspace. Charts
+  it saves appear in the artifact panel automatically. Each call is a fresh process — state
+  lives in files, which are inspectable and survive a restart, rather than in a kernel whose
+  contents go stale against the files underneath it.
 - **Skills.** Drop a `SKILL.md` into the skills directory and its one-line description joins
   every request; the instructions themselves load only when the model opens it. Twenty skills
   cost a few hundred tokens a turn instead of tens of thousands. Curated local directory only —
@@ -82,7 +87,7 @@ Copy `apps/web/mcp.config.example.json` to `apps/web/mcp.config.json` to connect
 ## Tests
 
 ```bash
-pnpm test          # 307 tests; Docker conformance skips if the daemon is absent
+pnpm test          # 323 tests; Docker conformance skips if the daemon is absent
 pnpm -r typecheck
 ```
 

@@ -51,6 +51,11 @@ because they are the ones that quietly decay over a long context.
   approval gate and connector bring-up are shared code: the Mac sidecar and the web app run
   the same implementation. Putting product behaviour in `apps/*` makes §3's "one core, three
   shells" untrue and guarantees the shells drift.
+- **A shell and Python see a real `/`; the file tools do not.** `runPython` runs with the
+  workspace as cwd, so relative paths land in it and `plt.savefig("/chart.png")` writes to the
+  root of the machine. The tool says so in its description and warns when a script exits clean
+  having created nothing the workspace can see. Do not try to "fix" this by rewriting paths —
+  it would break every legitimate absolute path.
 - **Budgets, quotas and model gating are enforced at the gateway, never only in the UI.**
   Assume the UI is bypassed. (§4)
 - **Never share a sandbox across orgs.** Per-org pools, ephemeral per-user within an org,
