@@ -260,33 +260,51 @@ private struct ConnectorsPane: View {
                 VStack(alignment: .leading, spacing: 8) {
                     if status.servers.isEmpty && status.errors.isEmpty && status.pending.isEmpty {
                         Text("No connectors configured.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .padding(.vertical, 4)
+                            .font(Typo.caption)
+                            .foregroundStyle(.dsMuted)
+                            .padding(.vertical, Space.xs)
                     }
 
                     ForEach(status.servers) { server in
-                        HStack(spacing: 6) {
-                            Circle()
-                                .fill(server.status == "connected" ? Color.dsOK : Color.dsMuted)
-                                .frame(width: 6, height: 6)
-                            Text(server.name ?? server.id)
-                                .font(.caption)
-                            Spacer(minLength: 0)
-                            if let count = server.toolCount {
-                                Text("\(count)")
-                                    .font(.caption2)
-                                    .foregroundStyle(.tertiary)
-                                    .monospacedDigit()
+                        HStack(spacing: Space.s) {
+                            // A server appears in this list because it connected —
+                            // the ones that did not are in `errors` below. There is
+                            // no per-server status field on the wire to colour by.
+                            StatusDot(color: .dsOK, label: "Connected")
+                            Text(server.id)
+                                .font(Typo.caption)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            Spacer(minLength: Space.xs)
+                            if let era = server.era {
+                                Text(era)
+                                    .font(Typo.micro)
+                                    .foregroundStyle(.dsMuted)
+                                    .lineLimit(1)
+                                    .fixedSize()
                             }
                         }
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel("\(server.id), connected")
                     }
 
                     ForEach(status.errors) { error in
-                        Label(error.message, systemImage: "exclamationmark.triangle.fill")
-                            .font(.caption2)
-                            .foregroundStyle(.dsDanger)
-                            .lineLimit(2)
+                        // Readable and selectable. These were clamped to two lines of
+                        // 10pt with no tooltip and no selection, in a pane as narrow
+                        // as 240pt — a connector failure is usually a URL or a stack
+                        // trace, so the message was unreadable and uncopyable.
+                        VStack(alignment: .leading, spacing: Space.hair) {
+                            Label(error.serverId, systemImage: "exclamationmark.triangle.fill")
+                                .font(Typo.caption)
+                                .foregroundStyle(.dsDanger)
+                            Text(error.message)
+                                .font(Typo.micro)
+                                .foregroundStyle(.dsMuted)
+                                .textSelection(.enabled)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .help(error.message)
                     }
 
                     if !status.pending.isEmpty {

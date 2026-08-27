@@ -104,9 +104,9 @@ struct DesignFixture {
         ]
         fixture.connectors = ConnectorStatus(
             servers: [
-                .init(id: "filesystem", name: "Filesystem", status: "connected", toolCount: 6),
-                .init(id: "linear", name: "Linear", status: "connected", toolCount: 14),
-                .init(id: "notion", name: "Notion", status: "error", toolCount: nil),
+                .init(id: "filesystem", era: "2025-06-18", protocolVersion: "2025-06-18"),
+                .init(id: "linear", era: "2025-06-18", protocolVersion: "2025-06-18"),
+                .init(id: "notion", era: "legacy", protocolVersion: nil),
             ],
             errors: [
                 .init(serverId: "notion",

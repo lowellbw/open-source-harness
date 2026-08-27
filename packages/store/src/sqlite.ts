@@ -47,5 +47,22 @@ export function openDatabase(filePath: string): SqliteDatabase {
     )
   }
 
-  return new sqlite.DatabaseSync(filePath)
+  const db = new sqlite.DatabaseSync(filePath)
+
+  // Wait for a competing writer instead of failing instantly.
+  //
+  // WAL lets a reader run alongside the writer, but it does not admit two
+  // writers, and SQLite's default busy timeout is zero — so the second one gets
+  // SQLITE_BUSY on the spot rather than blocking for a moment. That is fine
+  // until several processes open the same database at once, which `next build`
+  // does as a matter of course: it forks a worker per route to collect page
+  // data, every worker imports `apps/web/lib/session.ts`, and that constructs
+  // the store at module scope. Nine simultaneous migrations, and the build dies
+  // on `PRAGMA journal_mode = WAL` or the first `CREATE TABLE`.
+  //
+  // Five seconds is far longer than any migration or append needs and still
+  // short enough to surface a genuine deadlock rather than hang.
+  db.exec('PRAGMA busy_timeout = 5000')
+
+  return db
 }

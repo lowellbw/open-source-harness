@@ -15,6 +15,7 @@ struct WorkspaceAPI: Sendable {
     let sessionID: String
 
     private let session: URLSession
+    private let auth = OneShot()
     private let log = Logger(subsystem: AppInfo.subsystem, category: "api")
 
     init(endpoint: SidecarEndpoint, sessionID: String = "default") {
@@ -51,16 +52,41 @@ struct WorkspaceAPI: Sendable {
     private func request(_ path: String, method: String = "GET", query: [URLQueryItem] = []) -> URLRequest {
         var request = URLRequest(url: url(path, query: query))
         request.httpMethod = method
-        // Bearer rather than the browser's cookie exchange. A native client has no
-        // cookie jar worth the name, and a header is stateless across sidecar
-        // restarts — the token changes with the port, and both arrive together.
-        if let token = endpoint.token {
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        }
+        // No Authorization header. The sidecar accepts a one-shot `?t=` exchange or
+        // the cookie it hands back, and nothing else — see `authenticate()`.
         return request
     }
 
+    /// Trades the launch token for the sidecar's session cookie, once.
+    ///
+    /// The sidecar's credential model is a browser's: present `?t=<token>` once, get
+    /// an httpOnly SameSite=Strict cookie, and use that thereafter. A native client
+    /// is not a browser, but it does have a cookie store — `URLSessionConfiguration`
+    /// gives even an ephemeral session an in-memory one — so the exchange works
+    /// fine. It just has to be done deliberately.
+    ///
+    /// It cannot be inherited from the `WKWebView`: that has its own persistent data
+    /// store, and this session's is private to it. Both have to exchange separately.
+    ///
+    /// Primed lazily and exactly once per client, because every request needs it and
+    /// they start concurrently — `refreshAll()` fires three at once.
+    private func authenticate() async throws {
+        guard let token = endpoint.token else { return }
+        try await auth.once {
+            var request = URLRequest(url: url("/", query: [URLQueryItem(name: "t", value: token)]))
+            request.httpMethod = "GET"
+            let (_, response) = try await session.data(for: request)
+            // The exchange answers 302 to strip the token from the URL; URLSession
+            // follows it and stores the cookie on the way past. A 403 means the token
+            // is wrong, which is unrecoverable rather than transient.
+            if let http = response as? HTTPURLResponse, http.statusCode == 403 {
+                throw WorkspaceAPIError.http(status: 403, body: "The sidecar rejected the launch token.")
+            }
+        }
+    }
+
     private func decode<T: Decodable>(_ type: T.Type, from request: URLRequest) async throws -> T {
+        try await authenticate()
         let (data, response) = try await session.data(for: request)
         try Self.check(response, data: data)
         return try JSONDecoder().decode(type, from: data)
@@ -97,6 +123,7 @@ struct WorkspaceAPI: Sendable {
             URLQueryItem(name: "path", value: path),
             URLQueryItem(name: "download", value: "1"),
         ])
+        try await authenticate()
         let (data, response) = try await session.data(for: request)
         try Self.check(response, data: data)
         return data
@@ -122,6 +149,7 @@ struct WorkspaceAPI: Sendable {
         append("\r\n--\(boundary)--\r\n")
 
         request.httpBody = body
+        try await authenticate()
         let (data, response) = try await session.data(for: request)
         try Self.check(response, data: data)
     }
@@ -140,6 +168,7 @@ struct WorkspaceAPI: Sendable {
             "qualifiedName": qualifiedName as Any,
             "all": qualifiedName == nil,
         ].compactMapValues { $0 })
+        try await authenticate()
         let (data, response) = try await session.data(for: request)
         try Self.check(response, data: data)
     }
@@ -154,6 +183,7 @@ struct WorkspaceAPI: Sendable {
             "approvalId": approvalId,
             "decision": decision.rawValue,
         ])
+        try await authenticate()
         let (data, response) = try await session.data(for: request)
         try Self.check(response, data: data)
     }
@@ -183,6 +213,7 @@ struct WorkspaceAPI: Sendable {
                     if let modelAlias { payload["modelAlias"] = modelAlias }
                     request.httpBody = try JSONSerialization.data(withJSONObject: payload)
 
+                    try await authenticate()
                     let (bytes, response) = try await session.bytes(for: request)
                     if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
                         throw WorkspaceAPIError.http(status: http.statusCode, body: "")
@@ -309,17 +340,37 @@ struct ConnectorStatus: Decodable {
     var approved: [ApprovedTool] = []
     var pending: [PendingTool] = []
 
+    /// Mirrors what `packages/session/src/connectors.ts` actually emits.
+    ///
+    /// This used to declare `name`, `status` and `toolCount`, none of which the
+    /// server has ever sent — so every field decoded to `nil` and connector rows
+    /// rendered as bare ids.
     struct Server: Decodable, Identifiable, Equatable {
         let id: String
-        let name: String?
-        let status: String?
-        let toolCount: Int?
+        let era: String?
+        let protocolVersion: String?
     }
 
+    /// The server sends `{ id, message }`.
+    ///
+    /// This required `serverId`, which meant a single failing connector threw the
+    /// *whole* `ConnectorStatus` decode — taking `servers`, `approved` and `pending`
+    /// with it — and `refreshConnectors` swallowed the error into a log line. A
+    /// connector that could not start therefore blanked the entire pane rather than
+    /// showing itself as broken.
     struct ServerError: Decodable, Identifiable, Equatable {
+        /// The wire calls this `id`; `serverId` here so `Identifiable` can be a
+        /// composite. Two failures from one server are possible, and keying a
+        /// `ForEach` on the server id alone would silently drop the second.
         let serverId: String
         let message: String
+
         var id: String { serverId + message }
+
+        private enum CodingKeys: String, CodingKey {
+            case serverId = "id"
+            case message
+        }
     }
 
     struct ApprovedTool: Decodable, Identifiable, Equatable {
@@ -339,5 +390,35 @@ struct ConnectorStatus: Decodable {
 
         var id: String { qualifiedName }
         var hasChanged: Bool { status == "changed" }
+    }
+}
+
+/// Runs a piece of async work once, however many callers race for it.
+///
+/// The sidecar's token exchange is the motivating case: `refreshAll()` fires three
+/// requests concurrently and each needs the cookie, but the exchange must happen
+/// exactly once — a second one is a wasted round trip at best and, if the sidecar
+/// ever rotated on exchange, a lost credential at worst.
+///
+/// An actor rather than a lock: the guarded region spans an `await`, and `NSLock`
+/// is unavailable from an async context for exactly that reason.
+actor OneShot {
+    private var task: Task<Void, Error>?
+
+    func once(_ work: @escaping @Sendable () async throws -> Void) async throws {
+        if let existing = task {
+            try await existing.value
+            return
+        }
+        let task = Task { try await work() }
+        self.task = task
+        do {
+            try await task.value
+        } catch {
+            // A failed exchange must not be cached, or one transient error would
+            // leave the client permanently unauthenticated.
+            self.task = nil
+            throw error
+        }
     }
 }
