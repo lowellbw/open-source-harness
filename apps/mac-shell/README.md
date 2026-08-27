@@ -68,20 +68,54 @@ TCC/PPPC prompting, Sparkle updates, and the content-blind wake relay.
 
 ```sh
 cd apps/mac-shell
-./build.sh --run                                  # debug, ad-hoc signed, launched with logs here
-./build.sh --release --sidecar ../../dist/sidecar # bundles the server into Resources
+pnpm --filter @workspace/web build                # the sidecar serves this; do it first
+./build.sh --dev-sidecar                          # an app you can double-click
+./build.sh --run                                  # debug, ad-hoc signed, logs on this terminal
+./build.sh --release --sidecar ../../dist/sidecar # bundles a real server into Resources
 ./build.sh --release --universal --sign "Developer ID Application: … (TEAMID)"
 ```
+
+**`--dev-sidecar` is the one to use day to day.** Without it the `.app` only works when
+launched from a terminal that exports `AGENTIC_SIDECAR_PATH` and has a usable `node` on
+`PATH`; double-clicking it in Finder gets "Sidecar not bundled". It writes an entry point
+that imports `apps/sidecar/server.mjs` from this working copy, and copies the `node` on
+your `PATH` into `Contents/Resources/sidecar/node` — Finder gives an app almost no `PATH`,
+and `resolveNodeExecutable`'s fallbacks do not include nvm, which is where most Macs keep
+node.
+
+It is **not distributable**: it hardcodes an absolute path into your home directory and
+breaks if the checkout moves.
+
+### What a distributable bundle still needs
+
+`--sidecar <dir>` expects a directory that carries the sidecar *and its whole dependency
+tree*, and nothing in this repo produces one yet. The missing piece is
+`output: 'standalone'` in `apps/web/next.config.ts`, which makes Next emit a
+self-contained server with a traced `node_modules`. That file is the backend's
+(see CLAUDE.md, "Who works where"), so it is a request rather than a change made here.
 
 `--run` executes `Contents/MacOS/MacShell` directly rather than going through `open`,
 so stdout, stderr and any crash text land on your terminal. `Bundle.main` still
 resolves to the `.app`, because the binary is inside it.
 
-Without a bundled sidecar, point the app at one:
+To point a bundle-less build at a sidecar by hand:
 
 ```sh
-AGENTIC_SIDECAR_PATH=/path/to/server.js "build/Agentic Workspace.app/Contents/MacOS/MacShell"
+AGENTIC_SIDECAR_PATH=/path/to/server.mjs "build/Agentic Workspace.app/Contents/MacOS/MacShell"
 ```
+
+### Credentials
+
+The provider key lives in the login keychain, and Settings writes it. Two things worth
+knowing:
+
+- The app prefers `AGENTIC_PROVIDER_API_KEY` from its own environment and skips the
+  keychain entirely when it is set. That is what makes development bearable — the
+  keychain ACL is bound to the binary's designated requirement, and an ad-hoc
+  signature's cdhash changes on every rebuild, so otherwise you get a password prompt
+  per launch that no amount of "Always Allow" can stick to.
+- `AGENTIC_SEARCH_API_KEY` (Brave) is optional. Without it search still works, through
+  the provider's own tool, billed per call rather than per token.
 
 Logs:
 
