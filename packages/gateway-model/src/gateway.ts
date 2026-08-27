@@ -1,5 +1,5 @@
 import { createOpenRouter } from '@openrouter/ai-sdk-provider'
-import type { LanguageModel, LanguageModelUsage } from 'ai'
+import type { LanguageModel, LanguageModelUsage, ToolSet } from 'ai'
 import type { CostBuckets } from '@workspace/protocol'
 import { ModelCatalog, defaultCatalog, type ModelEntry } from './catalog.js'
 import { Meter, priceUsageReport } from './meter.js'
@@ -22,6 +22,16 @@ export interface ModelGatewayOptions {
   /** OpenRouter key. Falls back to OPENROUTER_API_KEY. */
   apiKey?: string
   limits?: BudgetLimits
+  /**
+   * Attach the provider's server-side web search to every request.
+   *
+   * Used when no dedicated search API is configured. It costs no extra
+   * credential and adds no sub-processor to disclose (§6.4), because the search
+   * happens inside a request already going to the model provider. It still
+   * surfaces as a tool call in the stream, so the trace shows the search
+   * happened and the meter can price it.
+   */
+  webSearch?: { maxResults?: number; engine?: 'auto' | 'native' | 'exa' }
 }
 
 export interface ResolvedModel {
@@ -29,6 +39,15 @@ export interface ResolvedModel {
   model: LanguageModel
   /** Normalised vendor, for the reasoning-artifact rules. */
   vendor: string
+  /**
+   * Tools the PROVIDER runs, not us.
+   *
+   * Kept separate from the agent's own toolset because they behave differently:
+   * there is no `execute` to call, the work happens server-side, and they are
+   * billed per call rather than per token. The agent merges them in but counts
+   * them apart.
+   */
+  providerTools: ToolSet
 }
 
 export class ModelGateway {
@@ -37,6 +56,7 @@ export class ModelGateway {
   readonly budget: BudgetGuard
 
   private readonly openrouter: ReturnType<typeof createOpenRouter>
+  private readonly providerTools: ToolSet
 
   constructor(options: ModelGatewayOptions = {}) {
     this.catalog = options.catalog ?? defaultCatalog()
@@ -51,6 +71,22 @@ export class ModelGateway {
       )
     }
     this.openrouter = createOpenRouter({ apiKey })
+
+    this.providerTools = options.webSearch
+      ? {
+          // The name reaches the model, and it is also what the agent matches
+          // on to count searches for the meter.
+          [PROVIDER_WEB_SEARCH]: this.openrouter.tools.webSearch({
+            maxResults: options.webSearch.maxResults ?? 5,
+            engine: options.webSearch.engine ?? 'auto',
+          }),
+        }
+      : {}
+  }
+
+  /** Names of provider-run tools, for metering and for `activeTools`. */
+  providerToolNames(): string[] {
+    return Object.keys(this.providerTools)
   }
 
   /**
@@ -66,6 +102,7 @@ export class ModelGateway {
       entry,
       model: this.openrouter(entry.upstreamModel),
       vendor: vendorOf(entry.upstreamModel),
+      providerTools: this.providerTools,
     }
   }
 
@@ -76,12 +113,24 @@ export class ModelGateway {
       entry,
       model: this.openrouter(entry.upstreamModel),
       vendor: vendorOf(entry.upstreamModel),
+      providerTools: this.providerTools,
     }
   }
 
-  /** Prices a completed request and adds it to the run and session totals. */
-  recordUsage(alias: string, usage: LanguageModelUsage | undefined): CostBuckets {
-    const cost = priceUsageReport(usage, this.catalog.ratesFor(alias))
+  /**
+   * Prices a completed request and adds it to the run and session totals.
+   *
+   * `webSearches` is passed in rather than read from usage because the
+   * provider's usage accounting has no field for server tool calls — the agent
+   * counts them off the tool stream. Omitting them would understate the bill by
+   * more than the tokens themselves on a search-heavy turn.
+   */
+  recordUsage(
+    alias: string,
+    usage: LanguageModelUsage | undefined,
+    extras: { webSearches?: number } = {},
+  ): CostBuckets {
+    const cost = priceUsageReport(usage, this.catalog.ratesFor(alias), extras)
     this.budget.record(cost)
     return cost
   }
@@ -94,6 +143,9 @@ export class ModelGateway {
     this.meter.startRun()
   }
 }
+
+/** The tool name the provider's server-side search is registered under. */
+export const PROVIDER_WEB_SEARCH = 'web_search'
 
 /**
  * Vendor from a gateway model ID such as "anthropic/claude-sonnet-5".

@@ -10,7 +10,8 @@ export const runtime = 'nodejs'
  * floor is flagged so the UI can show it can never be taken away.
  */
 export async function GET(req: Request) {
-  const sessionId = new URL(req.url).searchParams.get('sessionId') ?? 'default'
+  const sessionId = new URL(req.url).searchParams.get('sessionId')
+  if (!sessionId) return badRequest()
   const session = await getSession(sessionId)
 
   const available = session.gateway.catalog.listForRole(defaultPolicy.role)
@@ -34,4 +35,16 @@ export async function GET(req: Request) {
     totals: session.gateway.totals(),
     budget: session.gateway.budget.remaining(),
   })
+}
+
+/**
+ * No implicit thread.
+ *
+ * These routes used to fall back to a session called "default". That is worse
+ * than a 400: it silently materialises a workspace and a conversation for a
+ * caller that did not name one, and a client rendering before it has picked a
+ * thread creates a real thread it can never open again.
+ */
+function badRequest(): Response {
+  return Response.json({ error: 'sessionId is required' }, { status: 400 })
 }

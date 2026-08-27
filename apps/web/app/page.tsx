@@ -141,12 +141,25 @@ export default function Page() {
             text: `Context compacted (${event.strategy}): ${event.beforeMessages} messages / ${event.beforeTokens.toLocaleString()} tokens → ${event.afterMessages} / ${event.afterTokens.toLocaleString()}`,
             reasoning: '',
             tools: [],
+            sources: [],
           },
         ])
         break
 
       case 'model.switched':
         setCurrent(event.to)
+        break
+
+      case 'source.cited':
+        setTurns((prev) =>
+          withLastAssistant(prev, (turn) =>
+            // Deduplicated by URL: a model that cites the same page for three
+            // separate claims should not produce three identical chips.
+            turn.sources.some((s) => s.url === event.url)
+              ? turn
+              : { ...turn, sources: [...turn.sources, { url: event.url, title: event.title }] },
+          ),
+        )
         break
 
       case 'cost.updated':
@@ -169,8 +182,8 @@ export default function Page() {
       setError(null)
       setBusy(true)
 
-      const userTurn: Turn = { id: `u-${Date.now()}`, role: 'user', text, reasoning: '', tools: [] }
-      const assistantTurn: Turn = { id: `a-${Date.now()}`, role: 'assistant', text: '', reasoning: '', tools: [] }
+      const userTurn: Turn = { id: `u-${Date.now()}`, role: 'user', text, reasoning: '', tools: [], sources: [] }
+      const assistantTurn: Turn = { id: `a-${Date.now()}`, role: 'assistant', text: '', reasoning: '', tools: [], sources: [] }
       setTurns((prev) => [...prev, userTurn, assistantTurn])
 
       try {
@@ -280,7 +293,7 @@ function toTurn(message: Message): Turn | null {
     .map((part) => part.text)
     .join('\n')
   if (!text) return null
-  return { id: message.id, role: message.role, text, reasoning: '', tools: [] }
+  return { id: message.id, role: message.role, text, reasoning: '', tools: [], sources: [] }
 }
 
 /** Minimal SSE reader — the payloads are single-line JSON by construction. */

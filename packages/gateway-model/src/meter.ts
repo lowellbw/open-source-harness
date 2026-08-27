@@ -30,14 +30,44 @@ export function usageToBuckets(usage: LanguageModelUsage | undefined): Omit<Cost
     cacheWriteTokens: cacheWrite,
     outputTokens: usage?.outputTokens ?? 0,
     reasoningTokens: usage?.outputTokenDetails?.reasoningTokens ?? 0,
+    // Always zero here. The count is carried separately because the field it
+    // comes from survives only on per-step usage — see serverWebSearches.
+    webSearches: 0,
   }
 }
 
 export function priceUsageReport(
   usage: LanguageModelUsage | undefined,
   rates: ModelRates,
+  extras: { webSearches?: number } = {},
 ): CostBuckets {
-  return priceUsage(usageToBuckets(usage), rates)
+  return priceUsage({ ...usageToBuckets(usage), webSearches: extras.webSearches ?? 0 }, rates)
+}
+
+/**
+ * Server-side searches the provider ran inside one step.
+ *
+ * These do not appear in the typed usage fields, and — more surprisingly — do
+ * not appear as tool calls in the stream either: the whole search happens
+ * inside the model request, so the only traces are `source` parts and this
+ * count. Verified against a live OpenRouter response, which reports
+ * `server_tool_use_details.web_search_requests`.
+ *
+ * PER STEP, deliberately. `raw` survives on the usage attached to each
+ * `finish-step` part but is dropped from the aggregated total the SDK resolves
+ * at the end, so reading it off the total silently yields zero — which reads
+ * as "search is free" rather than as a bug. Callers sum across steps.
+ *
+ * Read defensively. It is a raw provider payload, so its shape is the
+ * provider's to change, and a meter that throws on an unexpected key would
+ * take the whole turn down with it.
+ */
+export function serverWebSearches(usage: LanguageModelUsage | undefined): number {
+  const details = (usage?.raw as { server_tool_use_details?: unknown } | undefined)
+    ?.server_tool_use_details as { web_search_requests?: unknown } | undefined
+
+  const count = details?.web_search_requests
+  return typeof count === 'number' && Number.isFinite(count) && count > 0 ? Math.floor(count) : 0
 }
 
 /**

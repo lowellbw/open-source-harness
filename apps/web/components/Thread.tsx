@@ -12,12 +12,18 @@ export interface ToolInvocation {
   result?: unknown
 }
 
+export interface Citation {
+  url: string
+  title: string
+}
+
 export interface Turn {
   id: string
   role: 'user' | 'assistant' | 'system'
   text: string
   reasoning: string
   tools: ToolInvocation[]
+  sources: Citation[]
 }
 
 export function Thread(props: { turns: Turn[]; status: string }) {
@@ -89,8 +95,47 @@ function TurnView({ turn }: { turn: Turn }) {
         <ToolView key={tool.id} tool={tool} />
       ))}
       {turn.text && <Markdown text={turn.text} />}
+      {turn.sources.length > 0 && <Sources sources={turn.sources} />}
     </div>
   )
+}
+
+/**
+ * Pages the model actually read.
+ *
+ * Rendered as links rather than a tool card because provider-side search leaves
+ * no tool call to expand — and because the useful thing about a citation is
+ * being able to click it, not being able to inspect the call that produced it.
+ */
+function Sources({ sources }: { sources: Citation[] }) {
+  return (
+    <div className="mt-2 flex flex-wrap gap-1.5">
+      {sources.map((source) => (
+        <a
+          key={source.url}
+          href={source.url}
+          target="_blank"
+          // Untrusted destinations: noopener stops the opened page reaching back
+          // through window.opener.
+          rel="noopener noreferrer"
+          title={source.url}
+          className="surface inline-flex max-w-[18rem] items-center gap-1.5 truncate rounded-full border px-2.5 py-1 text-[11px] transition-opacity hover:opacity-70"
+          style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}
+        >
+          <span style={{ color: 'var(--accent)' }}>↗</span>
+          <span className="truncate">{source.title || hostOf(source.url)}</span>
+        </a>
+      ))}
+    </div>
+  )
+}
+
+function hostOf(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '')
+  } catch {
+    return url
+  }
 }
 
 function ToolView({ tool }: { tool: ToolInvocation }) {

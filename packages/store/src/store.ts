@@ -2,7 +2,14 @@ import { openDatabase, type SqliteDatabase } from './sqlite.js'
 import { randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
-import { messageSchema, zeroCost, addCost, type CostBuckets, type Message } from '@workspace/protocol'
+import {
+  costBucketsSchema,
+  messageSchema,
+  zeroCost,
+  addCost,
+  type CostBuckets,
+  type Message,
+} from '@workspace/protocol'
 import { migrate } from './schema.js'
 
 /**
@@ -61,6 +68,14 @@ export class SqliteStore implements Store {
   }
 
   createThread(options: { id?: string; title?: string; modelAlias?: string } = {}): ThreadRecord {
+    // `?? randomUUID()` would let an empty string through, and an empty id is
+    // uniquely destructive: it is a valid primary key, so the row is created
+    // happily, but every `if (threadId)` guard upstream reads it as absent. The
+    // result is a thread that exists and can never be opened.
+    if (options.id !== undefined && options.id.trim() === '') {
+      throw new Error('Thread id may not be empty.')
+    }
+
     const now = Date.now()
     const record: ThreadRecord = {
       id: options.id ?? randomUUID(),
@@ -208,8 +223,11 @@ export class SqliteStore implements Store {
 
   private sumCosts(sql: string, ...params: string[]): CostBuckets {
     const rows = this.db.prepare(sql).all(...params) as { buckets: string }[]
+    // Parsed, not cast. A row written before a bucket existed has no value for
+    // it, and casting would make that `undefined` — which turns the whole sum
+    // into NaN, silently, from one old row. The schema's defaults fill it in.
     return rows.reduce(
-      (total, row) => addCost(total, JSON.parse(row.buckets) as CostBuckets),
+      (total, row) => addCost(total, costBucketsSchema.parse(JSON.parse(row.buckets))),
       zeroCost,
     )
   }

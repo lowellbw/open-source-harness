@@ -5,6 +5,13 @@ export {
 } from './approvals.js'
 
 export { buildWorkspaceTools, BUILTIN_TOOL_NAMES, type ToolContext } from './tools.js'
+export {
+  braveProvider,
+  buildSearchWebTools,
+  searchProviderFromEnv,
+  type SearchProvider,
+  type SearchResult,
+} from './search.js'
 
 export {
   initConnectors,

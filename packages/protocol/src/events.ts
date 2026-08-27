@@ -63,6 +63,24 @@ export const workspaceEventSchema = z.discriminatedUnion('type', [
   z.object({ ...base, type: z.literal('tool.call.started'), toolCallId: z.string(), name: z.string(), args: z.unknown() }),
   z.object({ ...base, type: z.literal('tool.call.finished'), toolCallId: z.string(), result: z.unknown(), isError: z.boolean() }),
 
+  // ---- sources ----
+  /**
+   * A page the model cited.
+   *
+   * First-class because provider-side web search leaves no other trace: it runs
+   * inside the model request, so there is no tool call to render and no tool
+   * result to inspect. Without this event a searched answer is
+   * indistinguishable from an asserted one, which is the difference between a
+   * citation the reader can check and a claim they cannot.
+   */
+  z.object({
+    ...base,
+    type: z.literal('source.cited'),
+    messageId: z.string(),
+    url: z.string(),
+    title: z.string(),
+  }),
+
   // ---- approvals ----
   /**
    * `irreversible` is the gate, not a hint. §9: approvals are shown for

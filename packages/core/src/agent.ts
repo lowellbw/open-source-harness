@@ -5,6 +5,7 @@ import {
   ModelGateway,
   prepareForProvider,
   isSwitchSafe,
+  serverWebSearches,
   BudgetExceededError,
 } from '@workspace/gateway-model'
 import { condense, defaultCondenserOptions } from './condenser.js'
@@ -156,9 +157,18 @@ export class Agent {
       // A caller asking the agent to do something should always get a verdict.
       const resolved = this.config.gateway.resolve(this.currentAlias, this.config.role)
 
+      // Provider-run tools ride along with our own, but they behave nothing
+      // like them: there is no `execute`, and — verified against a live
+      // response — no `tool-call` part in the stream either. The entire search
+      // happens inside the provider's request. What comes back is `source`
+      // parts, emitted below, and a count in the raw usage, which is where the
+      // meter reads it.
+      const providerToolNames = Object.keys(resolved.providerTools)
+      let webSearches = 0
+
       const result = streamText({
         model: resolved.model,
-        tools: resolveTools(this.config.tools),
+        tools: { ...resolveTools(this.config.tools), ...resolved.providerTools },
         stopWhen: stepCountIs(this.config.maxSteps ?? 12),
         instructions: toInstructions(this.pin.messages()),
         messages: toModelMessages(this.history),
@@ -198,6 +208,10 @@ export class Agent {
 
           const forProvider = prepareForProvider(condensed.messages, resolved.vendor)
 
+          // Provider tools are appended unconditionally: deferred loading exists
+          // to keep dozens of MCP schemas out of the prompt, and dropping the
+          // provider's own search along with them would silently disable it the
+          // moment a connector is configured.
           const active = this.config.activeTools?.()
 
           return {
@@ -209,7 +223,7 @@ export class Agent {
               }),
             ),
             messages: toModelMessages(forProvider.messages),
-            ...(active ? { activeTools: active as never } : {}),
+            ...(active ? { activeTools: [...active, ...providerToolNames] as never } : {}),
           }
         },
       })
@@ -231,6 +245,21 @@ export class Agent {
           this.emit({ type: 'message.delta', runId, ts: Date.now(), messageId, delta: part.text })
         } else if (part.type === 'reasoning-delta') {
           this.emit({ type: 'reasoning.delta', runId, ts: Date.now(), messageId, delta: part.text })
+        } else if (part.type === 'finish-step') {
+          // Summed per step rather than read from the final total: the raw
+          // provider payload the count lives in does not survive aggregation.
+          webSearches += serverWebSearches(part.usage)
+        } else if (part.type === 'source') {
+          if (part.sourceType === 'url') {
+            this.emit({
+              type: 'source.cited',
+              runId,
+              ts: Date.now(),
+              messageId,
+              url: part.url,
+              title: part.title ?? part.url,
+            })
+          }
         } else if (part.type === 'tool-call') {
           this.emit({
             type: 'tool.call.started',
@@ -255,7 +284,7 @@ export class Agent {
       this.emit({ type: 'message.finished', runId, ts: Date.now(), messageId })
 
       const usage = await result.usage
-      const cost = this.config.gateway.recordUsage(this.currentAlias, usage)
+      const cost = this.config.gateway.recordUsage(this.currentAlias, usage, { webSearches })
       const totals = this.config.gateway.totals()
       this.emit({
         type: 'cost.updated',

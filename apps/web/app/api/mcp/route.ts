@@ -11,7 +11,8 @@ export const runtime = 'nodejs'
  * trusted has moved, which is the stronger signal.
  */
 export async function GET(req: Request) {
-  const sessionId = new URL(req.url).searchParams.get('sessionId') ?? 'default'
+  const sessionId = new URL(req.url).searchParams.get('sessionId')
+  if (!sessionId) return badRequest()
   const { connectors: mcp } = await getSession(sessionId)
 
   const pending = mcp.toolset.needingApproval()
@@ -39,7 +40,7 @@ export async function POST(req: Request) {
     all?: boolean
   }
 
-  const { connectors: mcp } = await getSession(sessionId ?? 'default')
+  const { connectors: mcp } = await getSession(sessionId)
   const pending = mcp.toolset.needingApproval()
   const targets = all ? pending : pending.filter((t) => t.qualifiedName === qualifiedName)
 
@@ -58,4 +59,16 @@ export async function POST(req: Request) {
 
   // Statuses are computed at discovery, so re-run it to pick up the approvals.
   return Response.json({ ok: true, approved: targets.map((t) => t.qualifiedName) })
+}
+
+/**
+ * No implicit thread.
+ *
+ * These routes used to fall back to a session called "default". That is worse
+ * than a 400: it silently materialises a workspace and a conversation for a
+ * caller that did not name one, and a client rendering before it has picked a
+ * thread creates a real thread it can never open again.
+ */
+function badRequest(): Response {
+  return Response.json({ error: 'sessionId is required' }, { status: 400 })
 }

@@ -42,6 +42,8 @@ class StubGateway extends ModelGateway {
     return {
       entry,
       vendor: 'anthropic',
+      // No provider-run tools: this stub never reaches a provider.
+      providerTools: {},
       model: new MockLanguageModelV4({
         doStream: async () => ({
           stream: simulateReadableStream({
@@ -178,6 +180,23 @@ describe('threads survive the process', () => {
     expect(store.getThread(id)).toBeUndefined()
     expect(store.loadMessages(id)).toHaveLength(0)
     await expect(fs.stat(root)).rejects.toThrow()
+    await manager.dispose()
+  })
+
+  it('refuses an empty thread id at every layer', async () => {
+    // An empty id is a valid SQLite primary key and a falsy JavaScript string,
+    // so the row is created happily and then every `if (threadId)` upstream
+    // reads it as absent. The result is a thread that exists and can never be
+    // opened — which is exactly what a UI rendering before it has picked a
+    // thread produced.
+    const { store, build } = await harness()
+    const manager = build()
+
+    expect(() => store.createThread({ id: '' })).toThrow(/may not be empty/)
+    expect(() => store.createThread({ id: '   ' })).toThrow(/may not be empty/)
+    await expect(manager.get('')).rejects.toThrow(/may not be empty/)
+    expect(store.listThreads()).toHaveLength(0)
+
     await manager.dispose()
   })
 

@@ -16,8 +16,10 @@ export function FilePanel(props: { sessionId: string; version: number }) {
   const inputRef = useRef<HTMLInputElement>(null)
 
   const refresh = useCallback(async () => {
+    // No thread, nothing to list. Asking anyway used to create one.
+    if (!props.sessionId) return
     const res = await fetch(
-      `/api/files?sessionId=${props.sessionId}&path=${encodeURIComponent(path)}`,
+      `/api/files?sessionId=${encodeURIComponent(props.sessionId)}&path=${encodeURIComponent(path)}`,
     )
     if (!res.ok) return
     const data = await res.json()
@@ -31,7 +33,7 @@ export function FilePanel(props: { sessionId: string; version: number }) {
   }, [refresh, props.version])
 
   const upload = async (files: FileList | null) => {
-    if (!files?.length) return
+    if (!files?.length || !props.sessionId) return
     setUploading(true)
     try {
       for (const file of Array.from(files)) {

@@ -6,7 +6,8 @@ import { LocalWorkspace, type Workspace } from '@workspace/workspace'
 import type { WorkspaceEvent } from '@workspace/protocol'
 import type { Store, ThreadSummary } from '@workspace/store'
 import { ApprovalGate } from './approvals.js'
-import { BUILTIN_TOOL_NAMES, buildWorkspaceTools } from './tools.js'
+import { buildWorkspaceTools } from './tools.js'
+import { buildSearchWebTools, searchProviderFromEnv, type SearchProvider } from './search.js'
 import { initConnectors, type ConnectorConfig, type ConnectorState } from './connectors.js'
 
 /**
@@ -43,6 +44,14 @@ export interface SessionManagerConfig {
    * do not care about persistence want.
    */
   store?: Store
+  /**
+   * Dedicated search API, if one is configured.
+   *
+   * Absent, the gateway attaches the provider's own server-side search instead,
+   * so search works with no credential beyond the model key. Pass `null` to
+   * disable search altogether rather than falling back.
+   */
+  searchProvider?: SearchProvider | null
 }
 
 export interface Session {
@@ -94,6 +103,10 @@ export class SessionManager {
   }
 
   async get(id: string, modelAlias?: string): Promise<Session> {
+    if (!id.trim()) {
+      throw new Error('Session id may not be empty. There is no default thread.')
+    }
+
     const existing = this.sessions.get(id)
     if (existing) return existing
 
@@ -115,7 +128,22 @@ export class SessionManager {
     const workspace = new LocalWorkspace({ root })
     await workspace.start()
 
-    const gateway = this.config.createGateway?.() ?? new ModelGateway()
+    // A dedicated provider gives an explicit query and inspectable results; the
+    // provider-native fallback keeps search working with no second credential
+    // and no extra sub-processor to disclose (§6.4). Exactly one is active — 
+    // running both would search twice and bill twice for one question.
+    const searchProvider =
+      this.config.searchProvider === null
+        ? undefined
+        : (this.config.searchProvider ?? searchProviderFromEnv())
+
+    const gateway =
+      this.config.createGateway?.() ??
+      new ModelGateway(
+        searchProvider || this.config.searchProvider === null
+          ? {}
+          : { webSearch: { maxResults: 5, engine: 'auto' } },
+      )
     const connectors = await this.getConnectors()
 
     const listeners = new Set<(event: WorkspaceEvent) => void>()
@@ -129,7 +157,10 @@ export class SessionManager {
     }
 
     const approvals = new ApprovalGate(emit, this.config.approvalTimeoutMs)
-    const builtins = buildWorkspaceTools({ workspace, approvals, emit })
+    const builtins = {
+      ...buildWorkspaceTools({ workspace, approvals, emit }),
+      ...(searchProvider ? buildSearchWebTools({ provider: searchProvider }) : {}),
+    }
 
     const session: Session = {
       id,
@@ -192,10 +223,13 @@ export class SessionManager {
         // Deferred loading: only the search tool and whatever the model has
         // already asked for reach the prompt. Built-ins stay active because
         // they are few and always relevant.
+        // Derived from the built set rather than a hardcoded list, so a tool
+        // that exists only in some configurations — search, when a key is
+        // present — cannot be silently filtered out of the prompt.
         activeTools: () =>
           connectors.servers.length === 0
             ? undefined
-            : [...BUILTIN_TOOL_NAMES, ...connectors.toolset.activeToolNames()],
+            : [...Object.keys(builtins), ...connectors.toolset.activeToolNames()],
       }),
     }
 

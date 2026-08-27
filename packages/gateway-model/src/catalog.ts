@@ -134,6 +134,14 @@ export class ModelCatalog {
  *
  * The 25x spread between the floor and the premium tier is what makes §6.1's
  * "always available" rule nearly free to honour.
+ *
+ * `webSearchPerCall` is measured, not published. OpenRouter's Exa engine is
+ * $4 per 1,000, but `engine: 'auto'` prefers the upstream model's own search
+ * where it has one, and those bill at the upstream's rate — a live two-search
+ * request came back at roughly $0.0095 each. $0.01 is the honest figure for
+ * the path actually taken, and over-estimating is the right direction for a
+ * number that also drives a spend ceiling. A direct Brave key bills $5 per
+ * 1,000 instead.
  */
 export function defaultCatalog(): ModelCatalog {
   return new ModelCatalog([
@@ -143,7 +151,7 @@ export function defaultCatalog(): ModelCatalog {
       provider: 'openrouter',
       upstreamModel: 'openai/gpt-5.6-luna',
       contextWindow: 1_050_000,
-      rates: { inputPerMtok: 0.2, outputPerMtok: 1.2, cacheWriteMultiplier: 1.25, cacheReadMultiplier: 0.1 },
+      rates: { inputPerMtok: 0.2, outputPerMtok: 1.2, cacheWriteMultiplier: 1.25, cacheReadMultiplier: 0.1, webSearchPerCall: 0.01 },
       enabledForRoles: [],
       alwaysAvailable: true,
     },
@@ -153,7 +161,7 @@ export function defaultCatalog(): ModelCatalog {
       provider: 'openrouter',
       upstreamModel: 'anthropic/claude-sonnet-5',
       contextWindow: 1_000_000,
-      rates: { inputPerMtok: 2, outputPerMtok: 10, cacheWriteMultiplier: 1.25, cacheReadMultiplier: 0.1 },
+      rates: { inputPerMtok: 2, outputPerMtok: 10, cacheWriteMultiplier: 1.25, cacheReadMultiplier: 0.1, webSearchPerCall: 0.01 },
       enabledForRoles: [],
       alwaysAvailable: false,
     },
@@ -163,7 +171,7 @@ export function defaultCatalog(): ModelCatalog {
       provider: 'openrouter',
       upstreamModel: 'anthropic/claude-opus-5',
       contextWindow: 1_000_000,
-      rates: { inputPerMtok: 5, outputPerMtok: 25, cacheWriteMultiplier: 1.25, cacheReadMultiplier: 0.1 },
+      rates: { inputPerMtok: 5, outputPerMtok: 25, cacheWriteMultiplier: 1.25, cacheReadMultiplier: 0.1, webSearchPerCall: 0.01 },
       enabledForRoles: ['staff'],
       alwaysAvailable: false,
     },
@@ -173,7 +181,7 @@ export function defaultCatalog(): ModelCatalog {
       provider: 'openrouter',
       upstreamModel: 'google/gemini-3.7-flash',
       contextWindow: 1_048_576,
-      rates: { inputPerMtok: 0.38, outputPerMtok: 1.88, cacheWriteMultiplier: 1.25, cacheReadMultiplier: 0.1 },
+      rates: { inputPerMtok: 0.38, outputPerMtok: 1.88, cacheWriteMultiplier: 1.25, cacheReadMultiplier: 0.1, webSearchPerCall: 0.01 },
       enabledForRoles: [],
       alwaysAvailable: false,
     },

@@ -21,6 +21,7 @@ export const CUSTOM_EVENT_NAMES = {
   contextCompacted: 'workspace.context.compacted',
   modelSwitched: 'workspace.model.switched',
   costUpdated: 'workspace.cost.updated',
+  sourceCited: 'workspace.source.cited',
   fileChanged: 'workspace.file.changed',
   status: 'workspace.status',
 } as const
@@ -140,6 +141,15 @@ export function toAgUi(event: WorkspaceEvent, ctx: AgUiContext): BaseEvent[] {
           content: stringifyResult(event.result),
         } as BaseEvent,
       ]
+
+    // AG-UI has no source or citation event at 0.0.58, so this travels as
+    // CUSTOM alongside our other domain events.
+    case 'source.cited':
+      return custom(CUSTOM_EVENT_NAMES.sourceCited, {
+        messageId: event.messageId,
+        url: event.url,
+        title: event.title,
+      })
 
     case 'approval.requested':
       return custom(CUSTOM_EVENT_NAMES.approvalRequested, {

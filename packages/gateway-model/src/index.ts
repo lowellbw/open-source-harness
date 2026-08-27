@@ -8,7 +8,7 @@ export {
   type Tier,
 } from './catalog.js'
 
-export { Meter, usageToBuckets, priceUsageReport } from './meter.js'
+export { Meter, usageToBuckets, priceUsageReport, serverWebSearches } from './meter.js'
 
 export {
   BudgetGuard,
