@@ -21,6 +21,19 @@ enum Format {
         return currency.string(from: value as NSNumber) ?? String(format: "$%.2f", value)
     }
 
+    /// Cost at the precision a single step actually costs.
+    ///
+    /// `usd(_:)` collapses anything under a cent to "<$0.01", which is right for a
+    /// session total and useless for a step: a trace whose every row reads "<$0.01"
+    /// says nothing about which step was expensive, and explaining a surprising bill
+    /// is the entire reason the trace exists. Sub-cent amounts get the digits that
+    /// distinguish them.
+    static func microUsd(_ value: Double) -> String {
+        if value <= 0 { return "—" }
+        if value >= 0.01 { return usd(value) }
+        return String(format: "$%.5f", value)
+    }
+
     /// `1.2M`, `47K`. Rounds rather than truncating: integer division rendered
     /// 1,999,999 as "1M".
     static func compactTokens(_ count: Int) -> String {
@@ -33,6 +46,14 @@ enum Format {
         default:
             return "\(count)"
         }
+    }
+
+    /// `840ms`, `3.4s`. Milliseconds below a second, because a step that took 840ms
+    /// reading as "0.8s" loses the only digit that distinguishes it from 100ms.
+    static func duration(_ milliseconds: Double) -> String {
+        milliseconds < 1_000
+            ? "\(Int(milliseconds.rounded()))ms"
+            : String(format: "%.1fs", milliseconds / 1_000)
     }
 
     static func bytes(_ count: Int) -> String {

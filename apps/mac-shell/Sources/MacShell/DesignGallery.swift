@@ -69,6 +69,19 @@ struct DesignGalleryWindow: View {
 
     @ViewBuilder private var transcript: some View {
         Group {
+                GallerySection("Trace and citations") {
+                    VStack(alignment: .leading, spacing: Space.l) {
+                        if let turn = model.conversation.turns.first(where: { !$0.steps.isEmpty }) {
+                            StepTimelineView(turnID: turn.id + "-gallery",
+                                             steps: turn.steps,
+                                             subagents: turn.subagents)
+                                .environmentObject(model.conversation)
+                            CitationsView(sources: turn.sources)
+                        }
+                    }
+                    .frame(maxWidth: 640, alignment: .leading)
+                }
+
                 GallerySection("Transcript") {
                     TranscriptView()
                         .environmentObject(model.conversation)
@@ -121,6 +134,9 @@ private final class GalleryModel: ObservableObject {
         library.createSession()
         conversation = ConversationStore(library: library)
         conversation.applyDesignFixture(.withOverlays)
+        // Expanded, so the gallery captures the open state — the collapsed one is
+        // already visible in the transcript above.
+        conversation.expandedTimelines.insert("a1-gallery")
     }
 }
 

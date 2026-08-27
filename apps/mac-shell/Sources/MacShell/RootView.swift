@@ -229,6 +229,27 @@ private struct WorkspaceToolbar: ToolbarContent {
             .help("Switching mid-session takes effect at the next compaction boundary.")
         }
 
+        // Hidden, not disabled, where the model ignores it. A control that does
+        // nothing is worse than an absent one: the user believes they changed
+        // something.
+        if conversation.supportsReasoningEffort {
+            ToolbarItem(placement: .principal) {
+                Picker("Thinking effort", selection: Binding(
+                    get: { conversation.reasoningEffort },
+                    set: { conversation.reasoningEffort = $0 }
+                )) {
+                    ForEach(WorkspaceAPI.ReasoningEffort.allCases) { effort in
+                        Text(effort.label).tag(effort)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(maxWidth: 220)
+                .disabled(conversation.isStreaming)
+                .help("How hard the model thinks before answering. Applies to your next message.")
+            }
+        }
+
         ToolbarItem(placement: .primaryAction) {
             Button {
                 conversation.startNewSession()

@@ -65,6 +65,24 @@ struct DesignFixture {
                         args: .object(["path": .string("/src/analyse.py")]),
                         state: .running
                     ),
+                ],
+                steps: [
+                    StepRow(number: 0, toolCalls: 1, offered: 12, durationMs: 840, usd: 0.00042, finished: true),
+                    StepRow(number: 1, toolCalls: 2, offered: 12, durationMs: 2_310, usd: 0.00118, finished: true),
+                    StepRow(number: 2, toolCalls: 0, offered: 12, durationMs: 612, usd: 0.00031, finished: true),
+                    StepRow(number: 3, toolCalls: 1, offered: 12, usd: 0, finished: false),
+                ],
+                subagents: [
+                    SubagentRow(id: "s1", task: "Find every place the revenue column is parsed, and report which ones assume it is numeric.",
+                                usd: 0.00214, reportChars: 1_842, stoppedBy: "complete"),
+                    SubagentRow(id: "s2", task: "Check whether the CSV export format changed between releases.",
+                                usd: 0.00090, reportChars: 0, stoppedBy: "budget_exceeded"),
+                ],
+                sources: [
+                    Citation(url: "https://www.bea.gov/data/gdp", title: "Gross Domestic Product | U.S. Bureau of Economic Analysis"),
+                    Citation(url: "https://docs.python.org/3/library/csv.html", title: ""),
+                    Citation(url: "https://pandas.pydata.org/docs/reference/api/pandas.read_csv.html",
+                             title: "pandas.read_csv — pandas documentation"),
                 ]
             ),
             Turn(
@@ -84,11 +102,17 @@ struct DesignFixture {
         fixture.isStreaming = true
         fixture.models = [
             ModelInfo(alias: "Light", tier: "light", contextWindow: 1_050_000,
-                      inputPerMtok: 0.2, outputPerMtok: 1.2, isFloor: true),
+                      inputPerMtok: 0.2, outputPerMtok: 1.2, isFloor: true,
+                      supportsReasoningEffort: false,
+                      upstreamModel: "anthropic/claude-haiku-4.5", provider: "openrouter"),
             ModelInfo(alias: "Standard", tier: "standard", contextWindow: 1_000_000,
-                      inputPerMtok: 2, outputPerMtok: 10, isFloor: false),
+                      inputPerMtok: 2, outputPerMtok: 10, isFloor: false,
+                      supportsReasoningEffort: true,
+                      upstreamModel: "anthropic/claude-sonnet-5", provider: "openrouter"),
             ModelInfo(alias: "Premium", tier: "premium", contextWindow: 1_000_000,
-                      inputPerMtok: 5, outputPerMtok: 25, isFloor: false),
+                      inputPerMtok: 5, outputPerMtok: 25, isFloor: false,
+                      supportsReasoningEffort: true,
+                      upstreamModel: "anthropic/claude-opus-5", provider: "openrouter"),
         ]
         fixture.entries = [
             "/": [

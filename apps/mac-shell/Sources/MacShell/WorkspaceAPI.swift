@@ -103,6 +103,22 @@ struct WorkspaceAPI: Sendable {
 
     // MARK: - Models
 
+    /// How hard the model should think before answering.
+    enum ReasoningEffort: String, CaseIterable, Identifiable, Codable {
+        case low, medium, high
+
+        var id: String { rawValue }
+
+        /// What it means, not what the API calls it.
+        var label: String {
+            switch self {
+            case .low: return "Quick"
+            case .medium: return "Balanced"
+            case .high: return "Careful"
+            }
+        }
+    }
+
     func models() async throws -> ModelsResponse {
         try await decode(ModelsResponse.self, from: request("/api/models"))
     }
@@ -202,7 +218,11 @@ struct WorkspaceAPI: Sendable {
     /// a newline — so no multi-line SSE payload reassembly is needed. A frame that
     /// does not parse is dropped rather than thrown: one bad event must not end a
     /// turn the agent is still working through.
-    func chat(message: String, modelAlias: String?) -> AsyncThrowingStream<WorkspaceEvent, Error> {
+    func chat(
+        message: String,
+        modelAlias: String?,
+        reasoningEffort: ReasoningEffort?
+    ) -> AsyncThrowingStream<WorkspaceEvent, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
@@ -211,6 +231,10 @@ struct WorkspaceAPI: Sendable {
                     request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
                     var payload: [String: Any] = ["sessionId": sessionID, "message": message]
                     if let modelAlias { payload["modelAlias"] = modelAlias }
+                    // Sent per turn rather than per session, so changing it takes
+                    // effect on the next thing you send instead of the next thread
+                    // you open.
+                    if let reasoningEffort { payload["reasoningEffort"] = reasoningEffort.rawValue }
                     request.httpBody = try JSONSerialization.data(withJSONObject: payload)
 
                     try await authenticate()
@@ -311,6 +335,16 @@ struct ModelInfo: Decodable, Identifiable, Equatable {
     /// The one model the role can never lose access to. Shown, because a picker
     /// that can silently empty itself is worse than one that says what the floor is.
     let isFloor: Bool
+    /// Whether the provider honours a reasoning-effort hint. Where it would be
+    /// ignored the control is hidden rather than disabled — a control that does
+    /// nothing is worse than an absent one, because the user believes they changed
+    /// something.
+    let supportsReasoningEffort: Bool?
+    /// The concrete model behind the alias. §6.2 hides these from end users so an
+    /// admin can repoint an alias without retraining anyone — but whoever runs this
+    /// locally is the admin, and needs to know what is actually being called.
+    let upstreamModel: String?
+    let provider: String?
 
     var id: String { alias }
 }

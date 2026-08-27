@@ -101,6 +101,20 @@ final class ConversationStore: ObservableObject {
 
     @Published private(set) var models: [ModelInfo] = []
     @Published var selectedModel: String = "Standard"
+    @Published var reasoningEffort: WorkspaceAPI.ReasoningEffort = .medium
+
+    /// Remaining budget on the *run* ceiling, as distinct from the session's.
+    ///
+    /// The gateway limits spend per run and per session and stops on whichever comes
+    /// first. Reading only the session figure meant a run could halt while the meter
+    /// still showed the session's full allowance, and then name the wrong ceiling.
+    @Published private(set) var runBudgetRemaining: Double?
+
+    /// Whether the selected model honours an effort hint at all. Where it does not,
+    /// the control is hidden rather than disabled.
+    var supportsReasoningEffort: Bool {
+        currentModel?.supportsReasoningEffort ?? false
+    }
 
     @Published private(set) var pendingApproval: ApprovalRequest?
     @Published private(set) var errorMessage: String?
@@ -113,6 +127,7 @@ final class ConversationStore: ObservableObject {
     /// a screen.
     @Published var expandedTools: Set<String> = []
     @Published var expandedReasoning: Set<String> = []
+    @Published var expandedTimelines: Set<String> = []
 
     @Published private(set) var entries: [String: [DirEntry]] = [:]
     @Published private(set) var expandedDirectories: Set<String> = ["/"]
@@ -223,6 +238,7 @@ final class ConversationStore: ObservableObject {
         status = .idle
         expandedTools = []
         expandedReasoning = []
+        expandedTimelines = []
         entries = [:]
         expandedDirectories = ["/"]
         scrollAnchor = turns.last?.id
@@ -275,6 +291,7 @@ final class ConversationStore: ObservableObject {
             runCost = response.totals.run
             sessionCost = response.totals.session
             budgetRemaining = response.budget?.sessionUsd
+            runBudgetRemaining = response.budget?.runUsd
         } catch {
             log.error("models: \(error.localizedDescription, privacy: .public)")
         }
@@ -298,9 +315,13 @@ final class ConversationStore: ObservableObject {
         scrollAnchor = placeholder
 
         let model = selectedModel
+        // Only sent where the model honours it; elsewhere the control is hidden,
+        // and sending a value the provider discards would be a silent no-op.
+        let effort = supportsReasoningEffort ? reasoningEffort : nil
         turnTask = Task { [weak self] in
             do {
-                for try await event in api.chat(message: trimmed, modelAlias: model) {
+                for try await event in api.chat(message: trimmed, modelAlias: model,
+                                                reasoningEffort: effort) {
                     guard let self, !Task.isCancelled else { return }
                     self.apply(event)
                 }
@@ -458,7 +479,12 @@ final class ConversationStore: ObservableObject {
 
         case .runFinished(let reason):
             if reason == .budgetExceeded {
-                errorMessage = "The run stopped because the session budget was exhausted."
+                // Name the ceiling that actually tripped. The gateway limits per
+                // run *and* per session and stops on whichever comes first, so a
+                // run could halt while the meter still showed the session's full
+                // allowance — and then blame the wrong one.
+                let ceiling = (runBudgetRemaining ?? 1) <= 0 ? "run" : "session"
+                errorMessage = "The run stopped because the \(ceiling) budget was exhausted."
             } else if reason == .aborted {
                 appendNotice("The run was stopped.", symbol: "stop.circle")
             }
@@ -619,6 +645,7 @@ final class ConversationStore: ObservableObject {
         status = .idle
         expandedTools = []
         expandedReasoning = []
+        expandedTimelines = []
         entries = [:]
         expandedDirectories = ["/"]
 

@@ -172,6 +172,10 @@ private struct AssistantTurn: View {
                 ReasoningDisclosure(id: turn.id, text: turn.reasoning)
             }
 
+            if StepTimelineView.shouldShow(steps: turn.steps, subagents: turn.subagents) {
+                StepTimelineView(turnID: turn.id, steps: turn.steps, subagents: turn.subagents)
+            }
+
             ForEach(turn.tools) { tool in
                 ToolCallRow(tool: tool)
             }
@@ -179,6 +183,10 @@ private struct AssistantTurn: View {
             if !turn.text.isEmpty {
                 MarkdownText(turn.text)
                     .textSelection(.enabled)
+            }
+
+            if !turn.sources.isEmpty {
+                CitationsView(sources: turn.sources)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
