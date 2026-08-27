@@ -21,6 +21,7 @@
     "@workspace/gateway-model": "workspace:*",
     "@workspace/mcp": "workspace:*",
     "@workspace/protocol": "workspace:*",
+    "@workspace/skills": "workspace:*",
     "@workspace/store": "workspace:*",
     "@workspace/subagents": "workspace:*",
     "@workspace/workspace": "workspace:*",

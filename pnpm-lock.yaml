@@ -197,6 +197,9 @@ importers:
       '@workspace/protocol':
         specifier: workspace:*
         version: link:../protocol
+      '@workspace/skills':
+        specifier: workspace:*
+        version: link:../skills
       '@workspace/store':
         specifier: workspace:*
         version: link:../store
@@ -206,6 +209,18 @@ importers:
       '@workspace/workspace':
         specifier: workspace:*
         version: link:../workspace
+      ai:
+        specifier: ^7.0.79
+        version: 7.0.79(zod@3.25.76)
+      zod:
+        specifier: ^3.25.76
+        version: 3.25.76
+
+  packages/skills:
+    dependencies:
+      '@workspace/protocol':
+        specifier: workspace:*
+        version: link:../protocol
       ai:
         specifier: ^7.0.79
         version: 7.0.79(zod@3.25.76)

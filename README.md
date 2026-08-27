@@ -67,6 +67,11 @@ is absent.
   Markdown, images, agent-written pages in a sandboxed frame, and page images for Office files.
 - **Images in and out.** Generated through the same gateway as everything else, so image spend is
   metered like any other; attached images and PDFs go to the model as real image and file parts.
+- **Skills.** Drop a `SKILL.md` into the skills directory and its one-line description joins
+  every request; the instructions themselves load only when the model opens it. Twenty skills
+  cost a few hundred tokens a turn instead of tens of thousands. Curated local directory only —
+  a skill is instructions that get followed, so where it came from is the whole of its trust
+  story.
 - **MCP connectors** with deferred tool loading, so a dozen connected servers do not put tens of
   thousands of tokens of schema in front of the model before it has done anything. Tools are not
   callable until you have read what they claim to do, and a tool whose description changes after
@@ -77,7 +82,7 @@ Copy `apps/web/mcp.config.example.json` to `apps/web/mcp.config.json` to connect
 ## Tests
 
 ```bash
-pnpm test          # 290 tests; Docker conformance skips if the daemon is absent
+pnpm test          # 307 tests; Docker conformance skips if the daemon is absent
 pnpm -r typecheck
 ```
 
@@ -121,6 +126,7 @@ A full live pass costs well under a cent — it runs on the cheapest tier under 
 | `packages/store` | SQLite persistence: threads, messages, cost ledger. |
 | `packages/subagents` | Read-only scouts: the workspace wrapper, their toolset, the spawn tool. |
 | `packages/documents` | docx/pptx/xlsx builders, LibreOffice rendering, the three verification gates. |
+| `packages/skills` | SKILL.md parsing, the curated registry, progressive disclosure. |
 | `packages/mcp` | MCP client, tool-description pinning, deferred loading. |
 | `apps/web` | The workspace you open. |
 | `apps/sidecar` | Node process the Mac shell launches. Serves the same app; token-gated loopback, and the seam that translates the shell's environment contract. |

@@ -44,6 +44,9 @@ export const manager = new SessionManager({
     approvalsPath: path.join(dataRoot, 'mcp-approvals.json'),
     configPath: path.join(process.cwd(), 'mcp.config.json'),
   },
+  // Beside the data, not inside the repo: skills are something an
+  // administrator installs for a machine, not something that ships with it.
+  skillsPath: path.join(dataRoot, 'skills'),
   contextMaxTokens: 60_000,
 })
 

@@ -18,6 +18,7 @@ export default defineConfig({
       '@workspace/store': src('store'),
       '@workspace/subagents': src('subagents'),
       '@workspace/documents': src('documents'),
+      '@workspace/skills': src('skills'),
     },
   },
   test: {
