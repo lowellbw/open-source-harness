@@ -22,15 +22,32 @@ pnpm dev                              # http://localhost:3000
 Docker is optional. Without it everything still works — you lose only the container-backed
 workspace, and its conformance tests skip rather than fail.
 
-Documents need LibreOffice with its filters, and multi-page previews need poppler:
+### System dependencies
+
+Chat, files, search, subagents and skills need none of this. Documents and data analysis do:
 
 ```bash
-apt-get install -y libreoffice-writer libreoffice-impress libreoffice-calc poppler-utils
+# Documents: gate 1 needs unzip and xmllint, gates 2 and 3 need LibreOffice,
+# and multi-page rendering needs poppler.
+apt-get install -y \
+  libreoffice-writer libreoffice-impress libreoffice-calc \
+  poppler-utils unzip zip libxml2-utils
+
+# Data analysis: what runPython's own description promises the model.
+pip install --break-system-packages -r requirements.txt
 ```
 
-Beware a half-installed LibreOffice: `libreoffice-core` alone gives you an `soffice` that runs,
-exits 0, and converts nothing. The document gates skip loudly rather than passing quietly when it
-is absent.
+Two things that fail quietly if you skip them:
+
+- **A half-installed LibreOffice.** `libreoffice-core` alone gives you an `soffice` that runs,
+  exits 0, and converts nothing — every attempt reports "source file could not be loaded",
+  including for a plain `.txt`. The document gates skip loudly rather than passing quietly.
+- **A missing data stack.** `runPython` tells the model pandas and matplotlib are available. On a
+  machine where they are not, the model writes correct code and gets `ImportError`.
+
+Without `poppler-utils` you get page one only, and `RenderResult.via` says `'libreoffice'` so a
+caller can tell. Without `xmllint`, gate 1 checks the package structure but does not parse the
+XML parts, and says so in its detail rather than implying it checked.
 
 ## What works today
 

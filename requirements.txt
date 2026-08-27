@@ -1,0 +1,15 @@
+# What `runPython` promises the model is available.
+#
+# The tool's own description names these, so a machine without them makes the
+# description a lie — the model writes correct pandas and gets ImportError.
+#
+#     pip install --break-system-packages -r requirements.txt
+#
+# Versions are unpinned deliberately: this is a workspace for analysis, not a
+# reproducible build, and pinning would age into conflicts with whatever the
+# host Python already has.
+pandas
+numpy
+matplotlib
+openpyxl
+tabulate
