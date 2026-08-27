@@ -9,6 +9,7 @@ const config: NextConfig = {
     '@workspace/gateway-model',
     '@workspace/mcp',
     '@workspace/session',
+    '@workspace/store',
   ],
   // The workspace seam shells out and touches the filesystem; it must never be
   // bundled for the browser.

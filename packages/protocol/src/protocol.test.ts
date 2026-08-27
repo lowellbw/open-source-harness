@@ -41,7 +41,15 @@ const samples: WorkspaceEvent[] = [
     afterTokens: 20_000,
   },
   { type: 'model.switched', runId: 'r1', ts: 15, from: 'a', to: 'b', atCompactionBoundary: true },
-  { type: 'cost.updated', runId: 'r1', ts: 16, run: zeroCost, session: zeroCost },
+  {
+    type: 'cost.updated',
+    runId: 'r1',
+    ts: 16,
+    run: zeroCost,
+    session: zeroCost,
+    delta: zeroCost,
+    model: 'Standard',
+  },
   { type: 'workspace.file.changed', runId: 'r1', ts: 17, path: '/out/deck.pptx', op: 'created' },
 ]
 

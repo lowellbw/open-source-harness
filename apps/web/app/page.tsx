@@ -1,17 +1,18 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { WorkspaceEvent } from '@workspace/protocol'
+import type { Message, WorkspaceEvent } from '@workspace/protocol'
 import { FilePanel } from '@/components/FilePanel'
+import { ThreadList } from '@/components/ThreadList'
 import { Thread, type Turn } from '@/components/Thread'
 import { Composer } from '@/components/Composer'
 import { TopBar, type ModelInfo } from '@/components/TopBar'
 import { ApprovalPrompt, type Approval } from '@/components/ApprovalPrompt'
 import { ConnectorPanel } from '@/components/ConnectorPanel'
 
-const SESSION_ID = 'default'
-
 export default function Page() {
+  const [threadId, setThreadId] = useState<string | null>(null)
+  const [threadsVersion, setThreadsVersion] = useState(0)
   const [turns, setTurns] = useState<Turn[]>([])
   const [models, setModels] = useState<ModelInfo[]>([])
   const [current, setCurrent] = useState('Standard')
@@ -23,17 +24,59 @@ export default function Page() {
   const [error, setError] = useState<string | null>(null)
 
   const refreshModels = useCallback(async () => {
-    const res = await fetch(`/api/models?sessionId=${SESSION_ID}`)
+    if (!threadId) return
+    const res = await fetch(`/api/models?sessionId=${threadId}`)
     if (!res.ok) return
     const data = await res.json()
     setModels(data.models)
     setCurrent(data.current)
     setCost({ run: data.totals.run.usd, session: data.totals.session.usd })
-  }, [])
+  }, [threadId])
 
   useEffect(() => {
     void refreshModels()
   }, [refreshModels])
+
+  /**
+   * Land on a thread at startup: the most recent one, or a new one on a first
+   * run. Opening to an empty screen with a thread list you have to notice is
+   * worse than opening where you left off.
+   */
+  useEffect(() => {
+    if (threadId) return
+    void (async () => {
+      const res = await fetch('/api/threads')
+      const { threads } = res.ok ? await res.json() : { threads: [] }
+      if (threads.length > 0) {
+        setThreadId(threads[0].id)
+        return
+      }
+      const created = await fetch('/api/threads', { method: 'POST' })
+      if (created.ok) {
+        setThreadId((await created.json()).id)
+        setThreadsVersion((v) => v + 1)
+      }
+    })()
+  }, [threadId])
+
+  /** Render a thread's stored transcript when it is opened. */
+  useEffect(() => {
+    if (!threadId) return
+    let cancelled = false
+    void (async () => {
+      const res = await fetch(`/api/threads/${threadId}`)
+      if (!res.ok || cancelled) return
+      const data = (await res.json()) as { messages: Message[] }
+      if (cancelled) return
+      setTurns(data.messages.map(toTurn).filter((t): t is Turn => t !== null))
+      setError(null)
+      setApproval(null)
+      setFilesVersion((v) => v + 1)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [threadId])
 
   const applyEvent = useCallback((event: WorkspaceEvent) => {
     switch (event.type) {
@@ -122,6 +165,7 @@ export default function Page() {
 
   const send = useCallback(
     async (text: string) => {
+      if (!threadId) return
       setError(null)
       setBusy(true)
 
@@ -133,7 +177,7 @@ export default function Page() {
         const res = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sessionId: SESSION_ID, message: text, modelAlias: current }),
+          body: JSON.stringify({ sessionId: threadId, message: text, modelAlias: current }),
         })
         if (!res.body) throw new Error('No response stream')
 
@@ -156,20 +200,23 @@ export default function Page() {
         setStatus('idle')
         void refreshModels()
         setFilesVersion((v) => v + 1)
+        // Picks up the auto-title derived from the first message, and the
+        // updated message count and spend.
+        setThreadsVersion((v) => v + 1)
       }
     },
-    [applyEvent, current, refreshModels],
+    [applyEvent, current, refreshModels, threadId],
   )
 
   const resolveApproval = useCallback(async (approvalId: string, decision: 'allow' | 'deny') => {
     await fetch('/api/approve', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId: SESSION_ID, approvalId, decision }),
+      body: JSON.stringify({ sessionId: threadId, approvalId, decision }),
     })
     setApproval(null)
     setStatus('thinking')
-  }, [])
+  }, [threadId])
 
   return (
     <div className="flex h-dvh flex-col">
@@ -187,10 +234,18 @@ export default function Page() {
           className="hidden w-72 shrink-0 flex-col border-r md:flex"
           style={{ borderColor: 'var(--border)' }}
         >
-          <div className="min-h-0 flex-1">
-            <FilePanel sessionId={SESSION_ID} version={filesVersion} />
+          <div className="min-h-0 flex-[2] overflow-hidden border-b" style={{ borderColor: 'var(--border)' }}>
+            <ThreadList
+              current={threadId}
+              version={threadsVersion}
+              onSelect={setThreadId}
+              onChanged={() => setThreadId(null)}
+            />
           </div>
-          <ConnectorPanel sessionId={SESSION_ID} />
+          <div className="min-h-0 flex-[3]">
+            <FilePanel sessionId={threadId ?? ''} version={filesVersion} />
+          </div>
+          <ConnectorPanel sessionId={threadId ?? ''} />
         </aside>
 
         <main className="flex min-h-0 flex-1 flex-col">
@@ -209,6 +264,23 @@ export default function Page() {
       {approval && <ApprovalPrompt approval={approval} onResolve={resolveApproval} />}
     </div>
   )
+}
+
+/**
+ * Renders a stored message as a turn.
+ *
+ * Tool calls are not replayed. The store keeps the conversation, not the
+ * transcript of every tool invocation, and reconstructing a live-looking tool
+ * card from a finished run would imply the run is still happening.
+ */
+function toTurn(message: Message): Turn | null {
+  if (message.role !== 'user' && message.role !== 'assistant') return null
+  const text = message.parts
+    .filter((part): part is { type: 'text'; text: string } => part.type === 'text')
+    .map((part) => part.text)
+    .join('\n')
+  if (!text) return null
+  return { id: message.id, role: message.role, text, reasoning: '', tools: [] }
 }
 
 /** Minimal SSE reader — the payloads are single-line JSON by construction. */

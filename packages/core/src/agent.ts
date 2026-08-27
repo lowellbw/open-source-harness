@@ -58,6 +58,22 @@ export interface AgentConfig {
   onEvent?: (event: WorkspaceEvent) => void
   persistToolOutput?: (toolCallId: string, output: unknown) => Promise<string>
   summarise?: (messages: Message[]) => Promise<string>
+  /**
+   * History to resume from, in order.
+   *
+   * The agent is deliberately not the thing that loads it. Reading from a store
+   * here would make the core depend on persistence, and the two shells disagree
+   * about where the database lives; the session layer knows and passes it in.
+   */
+  initialHistory?: Message[]
+  /**
+   * Fired as each message joins history, not in a batch at the end of the turn.
+   *
+   * Batching would lose the user's question if the process died mid-call, which
+   * is the moment a conversation is most worth keeping: whatever was asked that
+   * made it crash.
+   */
+  onMessage?: (message: Message) => void
 }
 
 export interface TurnResult {
@@ -76,6 +92,10 @@ export class Agent {
   constructor(private readonly config: AgentConfig) {
     this.pin = new PolicyPin(config.policy)
     this.currentAlias = config.modelAlias
+    // Copied, not aliased: the caller's array is usually the store's return
+    // value, and appending to it as a side effect of running a turn is the kind
+    // of shared-mutable-state bug that only shows up under a second session.
+    if (config.initialHistory) this.history = [...config.initialHistory]
   }
 
   getHistory(): Message[] {
@@ -115,12 +135,14 @@ export class Agent {
     const runId = randomUUID()
     this.config.gateway.startRun()
 
-    this.history.push({
+    const userMessage: Message = {
       id: randomUUID(),
       role: 'user',
       pinned: false,
       parts: [{ type: 'text', text: userText }],
-    })
+    }
+    this.history.push(userMessage)
+    this.config.onMessage?.(userMessage)
 
     this.emit({ type: 'run.started', runId, ts: Date.now(), threadId: this.threadId })
     this.emit({ type: 'status', runId, ts: Date.now(), state: 'thinking' })
@@ -235,18 +257,27 @@ export class Agent {
       const usage = await result.usage
       const cost = this.config.gateway.recordUsage(this.currentAlias, usage)
       const totals = this.config.gateway.totals()
-      this.emit({ type: 'cost.updated', runId, ts: Date.now(), run: totals.run, session: totals.session })
+      this.emit({
+        type: 'cost.updated',
+        runId,
+        ts: Date.now(),
+        run: totals.run,
+        session: totals.session,
+        delta: cost,
+        model: this.currentAlias,
+      })
 
-      this.history.push({
+      const assistantMessage: Message = {
         id: messageId,
         role: 'assistant',
         pinned: false,
         parts: [{ type: 'text', text }],
-      })
+      }
+      this.history.push(assistantMessage)
+      this.config.onMessage?.(assistantMessage)
 
       this.emit({ type: 'run.finished', runId, ts: Date.now(), reason: 'complete' })
       this.emit({ type: 'status', runId, ts: Date.now(), state: 'idle' })
-      void cost
 
       return { text, runId, stoppedBy: 'complete' }
     } catch (error) {

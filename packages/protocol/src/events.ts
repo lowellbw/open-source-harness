@@ -111,7 +111,19 @@ export const workspaceEventSchema = z.discriminatedUnion('type', [
   }),
 
   // ---- cost ----
-  z.object({ ...base, type: z.literal('cost.updated'), run: costBucketsSchema, session: costBucketsSchema }),
+  /**
+   * `delta` is this single request's cost, which the run and session totals
+   * cannot be decomposed back into. The ledger needs the per-request row — a
+   * total is not a record of what was spent, only of how much.
+   */
+  z.object({
+    ...base,
+    type: z.literal('cost.updated'),
+    run: costBucketsSchema,
+    session: costBucketsSchema,
+    delta: costBucketsSchema,
+    model: z.string(),
+  }),
 
   // ---- workspace ----
   z.object({

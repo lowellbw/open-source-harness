@@ -21,7 +21,16 @@
     "afterFiles": [],
     "fallback": []
   },
-  "dynamicRoutes": [],
+  "dynamicRoutes": [
+    {
+      "page": "/api/threads/[id]",
+      "regex": "^/api/threads/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPid": "nxtPid"
+      },
+      "namedRegex": "^/api/threads/(?<nxtPid>[^/]+?)(?:/)?$"
+    }
+  ],
   "staticRoutes": [
     {
       "page": "/",
@@ -70,6 +79,12 @@
       "regex": "^/api/models(?:/)?$",
       "routeKeys": {},
       "namedRegex": "^/api/models(?:/)?$"
+    },
+    {
+      "page": "/api/threads",
+      "regex": "^/api/threads(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/threads(?:/)?$"
     }
   ],
   "dataRoutes": [],

@@ -1,0 +1,3 @@
+{
+  "/api/threads/[id]/route": "app/api/threads/[id]/route.js"
+}

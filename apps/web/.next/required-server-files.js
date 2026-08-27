@@ -326,7 +326,8 @@ self.__SERVER_FILES_MANIFEST={
       "@workspace/workspace",
       "@workspace/gateway-model",
       "@workspace/mcp",
-      "@workspace/session"
+      "@workspace/session",
+      "@workspace/store"
     ],
     "serverExternalPackages": [
       "ai"

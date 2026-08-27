@@ -1,6 +1,7 @@
 import os from 'node:os'
 import path from 'node:path'
 import { SessionManager, defaultPolicy } from '@workspace/session'
+import { SqliteStore } from '@workspace/store'
 
 /**
  * Web-app wiring for the shared session layer.
@@ -18,10 +19,24 @@ import { SessionManager, defaultPolicy } from '@workspace/session'
  * singleton is exactly how that accident occurs.
  */
 
-const dataRoot = path.join(os.tmpdir(), 'agentic-workspace')
+/**
+ * Under the home directory, not the temp directory.
+ *
+ * These files are now someone's conversation history and their documents.
+ * `os.tmpdir()` is swept — on a Mac by the system every few days, in a
+ * container on every restart — which would make the persistence below a
+ * pleasant fiction.
+ *
+ * Overridable so the Mac shell can point at Application Support, where a
+ * sandboxed app is actually permitted to write.
+ */
+const dataRoot = process.env.AGENTIC_WORKSPACE_HOME ?? path.join(os.homedir(), '.agentic-workspace')
+
+export const store = new SqliteStore(path.join(dataRoot, 'workspace.db'))
 
 export const manager = new SessionManager({
-  workspaceRoot: dataRoot,
+  workspaceRoot: path.join(dataRoot, 'threads'),
+  store,
   connectors: {
     // Global rather than per session: connectors are configured once, so
     // scoping approvals per session means re-reading the same descriptions

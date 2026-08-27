@@ -1,14 +1,17 @@
-import { createRequire } from 'node:module'
-
 /**
  * Loads `node:sqlite` at runtime rather than through a static import.
  *
  * The module is new enough that bundlers do not recognise it: Vite strips the
- * `node:` prefix and then fails to resolve a package called `sqlite`, and Next's
- * bundler has the same blind spot. Marking it external in each bundler's config
- * is a game of whack-a-mole across three build pipelines; going through
- * `createRequire` means no bundler ever sees it, and the runtime — which does
- * know the module — resolves it.
+ * `node:` prefix and then fails to resolve a package called `sqlite`. The
+ * obvious dodge — `createRequire(import.meta.url)` — fixes Vite and breaks
+ * Turbopack, which follows the call anyway and then cannot represent a CommonJS
+ * reference rooted at a URL. Marking the package external does not help either,
+ * because the analysis happens before that.
+ *
+ * `process.getBuiltinModule` exists for exactly this problem. It is a plain
+ * function call with a string argument, so there is nothing for a bundler to
+ * resolve, and Node hands back the builtin. Available since 22.3; this
+ * repository requires 22+.
  *
  * The types below cover only what this package uses. They are hand-written
  * because `@types/node` does not yet ship them for the experimental module, and
@@ -32,9 +35,17 @@ interface SqliteModule {
   DatabaseSync: new (path: string) => SqliteDatabase
 }
 
-const require = createRequire(import.meta.url)
-
 export function openDatabase(filePath: string): SqliteDatabase {
-  const { DatabaseSync } = require('node:sqlite') as SqliteModule
-  return new DatabaseSync(filePath)
+  const sqlite = (
+    process as unknown as { getBuiltinModule?: (id: string) => unknown }
+  ).getBuiltinModule?.('node:sqlite') as SqliteModule | undefined
+
+  if (!sqlite?.DatabaseSync) {
+    throw new Error(
+      'node:sqlite is unavailable. It needs Node 22.3 or newer; ' +
+        `this process is ${process.version}.`,
+    )
+  }
+
+  return new sqlite.DatabaseSync(filePath)
 }

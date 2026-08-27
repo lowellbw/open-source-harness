@@ -1,8 +1,10 @@
+import fs from 'node:fs/promises'
 import path from 'node:path'
 import { Agent, type OrgPolicy } from '@workspace/core'
 import { ModelGateway } from '@workspace/gateway-model'
 import { LocalWorkspace, type Workspace } from '@workspace/workspace'
 import type { WorkspaceEvent } from '@workspace/protocol'
+import type { Store, ThreadSummary } from '@workspace/store'
 import { ApprovalGate } from './approvals.js'
 import { BUILTIN_TOOL_NAMES, buildWorkspaceTools } from './tools.js'
 import { initConnectors, type ConnectorConfig, type ConnectorState } from './connectors.js'
@@ -35,6 +37,12 @@ export interface SessionManagerConfig {
   /** Injectable so tests can supply a gateway without a live key. */
   createGateway?: () => ModelGateway
   approvalTimeoutMs?: number
+  /**
+   * Durable thread storage. Optional: without it the manager behaves exactly as
+   * before and conversations die with the process, which is what the tests that
+   * do not care about persistence want.
+   */
+  store?: Store
 }
 
 export interface Session {
@@ -90,7 +98,18 @@ export class SessionManager {
     if (existing) return existing
 
     const policy = this.config.policy ?? defaultPolicy
-    const alias = modelAlias ?? this.config.defaultModelAlias ?? 'Standard'
+    const store = this.config.store
+
+    // A thread row is created on first sight rather than requiring the caller to
+    // create one first. The alternative is a class of bug where a session exists
+    // and its messages have nowhere to go, which fails silently at write time.
+    const thread = store?.getThread(id) ?? store?.createThread({ id, ...(modelAlias ? { modelAlias } : {}) })
+    const alias = modelAlias ?? thread?.modelAlias ?? this.config.defaultModelAlias ?? 'Standard'
+    if (store && thread && modelAlias && modelAlias !== thread.modelAlias) {
+      store.setThreadModel(id, modelAlias)
+    }
+
+    const history = store?.loadMessages(id) ?? []
 
     const root = path.join(this.config.workspaceRoot, id)
     const workspace = new LocalWorkspace({ root })
@@ -101,6 +120,11 @@ export class SessionManager {
 
     const listeners = new Set<(event: WorkspaceEvent) => void>()
     const emit = (event: WorkspaceEvent) => {
+      // Written here rather than in the agent so the core stays free of any
+      // notion of a database. The ledger is a session-layer concern.
+      if (event.type === 'cost.updated' && store) {
+        store.recordCost(id, event.runId, event.model, event.delta)
+      }
       for (const listener of listeners) listener(event)
     }
 
@@ -121,6 +145,27 @@ export class SessionManager {
         policy,
         modelAlias: alias,
         role: policy.role,
+        initialHistory: history,
+        ...(store
+          ? {
+              onMessage: (message) => {
+                store.appendMessages(id, [message])
+                // Title from the first thing asked. A sidebar of twenty rows
+                // all reading "New thread" is a list you cannot navigate, and
+                // asking the user to name a conversation before having it is
+                // asking them to summarise something that has not happened.
+                if (message.role === 'user' && store.getThread(id)?.title === 'New thread') {
+                  const text = message.parts
+                    .filter((part): part is { type: 'text'; text: string } => part.type === 'text')
+                    .map((part) => part.text)
+                    .join(' ')
+                    .replace(/\s+/g, ' ')
+                    .trim()
+                  if (text) store.renameThread(id, text.slice(0, 60))
+                }
+              },
+            }
+          : {}),
         contextMaxTokens: this.config.contextMaxTokens ?? 60_000,
         onEvent: emit,
         // Makes compaction genuinely lossless: the full output stays on disk
@@ -160,6 +205,48 @@ export class SessionManager {
 
   peek(id: string): Session | undefined {
     return this.sessions.get(id)
+  }
+
+  /**
+   * Thread operations.
+   *
+   * Routed through the manager rather than letting callers reach the store
+   * directly, because a thread has two halves: rows in SQLite and a live session
+   * holding a workspace and an agent. Deleting one without the other leaves
+   * either an orphaned workspace on disk or a session whose history no longer
+   * exists.
+   */
+  listThreads(): ThreadSummary[] {
+    return this.config.store?.listThreads() ?? []
+  }
+
+  createThread(title?: string, modelAlias?: string): { id: string } {
+    const store = this.config.store
+    if (!store) throw new Error('No store configured; threads are not persistent.')
+    const record = store.createThread({
+      ...(title ? { title } : {}),
+      ...(modelAlias ? { modelAlias } : {}),
+    })
+    return { id: record.id }
+  }
+
+  renameThread(id: string, title: string): void {
+    this.config.store?.renameThread(id, title)
+  }
+
+  async deleteThread(id: string): Promise<void> {
+    const session = this.sessions.get(id)
+    if (session) {
+      session.approvals.denyAll()
+      await session.workspace.dispose().catch(() => {})
+      this.sessions.delete(id)
+    }
+    this.config.store?.deleteThread(id)
+    // The workspace directory outlives dispose(), which releases handles rather
+    // than deleting files. Left behind, a deleted thread keeps its documents.
+    await fs.rm(path.join(this.config.workspaceRoot, id), { recursive: true, force: true }).catch(
+      () => {},
+    )
   }
 
   list(): Session[] {

@@ -6,5 +6,7 @@
   "/api/files/route": "app/api/files/route.js",
   "/api/mcp/route": "app/api/mcp/route.js",
   "/api/models/route": "app/api/models/route.js",
+  "/api/threads/[id]/route": "app/api/threads/[id]/route.js",
+  "/api/threads/route": "app/api/threads/route.js",
   "/page": "app/page.js"
 }

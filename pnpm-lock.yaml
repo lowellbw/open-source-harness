@@ -47,6 +47,9 @@ importers:
       '@workspace/session':
         specifier: workspace:*
         version: link:../../packages/session
+      '@workspace/store':
+        specifier: workspace:*
+        version: link:../../packages/store
       '@workspace/workspace':
         specifier: workspace:*
         version: link:../../packages/workspace
@@ -167,6 +170,9 @@ importers:
       '@workspace/protocol':
         specifier: workspace:*
         version: link:../protocol
+      '@workspace/store':
+        specifier: workspace:*
+        version: link:../store
       '@workspace/workspace':
         specifier: workspace:*
         version: link:../workspace

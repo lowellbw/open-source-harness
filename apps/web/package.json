@@ -12,7 +12,10 @@
   "dependencies": {
     "@workspace/core": "workspace:*",
     "@workspace/gateway-model": "workspace:*",
+    "@workspace/mcp": "workspace:*",
     "@workspace/protocol": "workspace:*",
+    "@workspace/session": "workspace:*",
+    "@workspace/store": "workspace:*",
     "@workspace/workspace": "workspace:*",
     "ai": "^7.0.79",
     "lucide-react": "^1.34.0",
@@ -21,9 +24,7 @@
     "react-dom": "^19.2.8",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
-    "zod": "^3.25.76",
-    "@workspace/mcp": "workspace:*",
-    "@workspace/session": "workspace:*"
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",

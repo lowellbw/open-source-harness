@@ -5,6 +5,8 @@
     "/api/chat": {},
     "/api/files": {},
     "/api/mcp": {},
-    "/api/models": {}
+    "/api/models": {},
+    "/api/threads": {},
+    "/api/threads/[id]": {}
   }
 }
