@@ -94,6 +94,31 @@ enum SidecarFailure: Error, Equatable {
 
 /// Everything needed to spawn the sidecar, resolved once before the first launch so
 /// a misconfigured build fails with a specific message instead of a generic ENOENT.
+/// The credentials the sidecar needs, read from the keychain at launch.
+///
+/// A struct rather than a widening parameter list: every one of these is optional,
+/// absent for a different reason, and the launch path should not have to care which.
+struct SidecarSecrets {
+    var providerAPIKey: String?
+    /// Optional. Absent means the sidecar does not offer web search at all.
+    var searchAPIKey: String?
+
+    static let none = SidecarSecrets()
+
+    /// Only the ones actually present. An empty-string key is worse than no key: the
+    /// app would treat it as configured and fail at the provider instead of at launch.
+    var environment: [String: String] {
+        var out: [String: String] = [:]
+        if let providerAPIKey, !providerAPIKey.isEmpty {
+            out["AGENTIC_PROVIDER_API_KEY"] = providerAPIKey
+        }
+        if let searchAPIKey, !searchAPIKey.isEmpty {
+            out["AGENTIC_SEARCH_API_KEY"] = searchAPIKey
+        }
+        return out
+    }
+}
+
 struct SidecarLaunchSpec {
     let executable: URL
     let arguments: [String]
@@ -112,11 +137,11 @@ struct SidecarLaunchSpec {
     /// log output.
     static let readyMarker = "AGENTIC_SIDECAR_READY"
 
-    /// - Parameter providerAPIKey: passed to the child in its environment when the
+    /// - Parameter secrets: passed to the child in its environment when the
     ///   user has stored one locally. A managed deployment has none: the org's key
     ///   lives in the gateway, which is also where budgets and model gating are
     ///   enforced, and the sidecar authenticates to the gateway instead.
-    static func resolve(dataDirectory: URL, providerAPIKey: String?) throws -> SidecarLaunchSpec {
+    static func resolve(dataDirectory: URL, secrets: SidecarSecrets) throws -> SidecarLaunchSpec {
         let environment = ProcessInfo.processInfo.environment
 
         let script = try resolveServerScript(environment: environment)
@@ -140,9 +165,11 @@ struct SidecarLaunchSpec {
         if let tz = environment["TZ"] { childEnvironment["TZ"] = tz }
         // Environment rather than a file or an argument: argv is world-readable via
         // `ps`, and a file on disk outlives the process that needed it.
-        if let providerAPIKey, !providerAPIKey.isEmpty {
-            childEnvironment["AGENTIC_PROVIDER_API_KEY"] = providerAPIKey
-        }
+        // The shell's half of the seam. It speaks `AGENTIC_*` and the app speaks
+        // `OPENROUTER_API_KEY` / `BRAVE_API_KEY`; `bridgeEnvironment()` in
+        // apps/sidecar/server.mjs maps between them before the app is constructed.
+        // Both names are published contracts — do not collapse them here.
+        for (name, value) in secrets.environment { childEnvironment[name] = value }
 
         return SidecarLaunchSpec(
             executable: node,
@@ -161,12 +188,18 @@ struct SidecarLaunchSpec {
             return url
         }
 
-        let bundled = (Bundle.main.resourceURL ?? Bundle.main.bundleURL)
-            .appendingPathComponent("sidecar/server.js")
-        guard FileManager.default.isReadableFile(atPath: bundled.path) else {
-            throw SidecarFailure.serverScriptMissing(expected: bundled.path)
+        // `.mjs` first: the sidecar is `apps/sidecar/server.mjs`, which is ESM. The
+        // `.js` fallback is for the development harnesses in `apps/mac-shell/sidecar`
+        // (the canned-API mock and the self-test stub), which a packaged build never
+        // ships.
+        let resources = Bundle.main.resourceURL ?? Bundle.main.bundleURL
+        for name in ["sidecar/server.mjs", "sidecar/server.js"] {
+            let candidate = resources.appendingPathComponent(name)
+            if FileManager.default.isReadableFile(atPath: candidate.path) { return candidate }
         }
-        return bundled
+        throw SidecarFailure.serverScriptMissing(
+            expected: resources.appendingPathComponent("sidecar/server.mjs").path
+        )
     }
 
     private static func resolveNodeExecutable(environment: [String: String]) throws -> URL {

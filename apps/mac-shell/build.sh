@@ -154,9 +154,9 @@ if [[ -n "$SIDECAR_DIR" ]]; then
   echo "==> copying sidecar from $SIDECAR_DIR"
   mkdir -p "$CONTENTS/Resources/sidecar"
   cp -R "$SIDECAR_DIR"/. "$CONTENTS/Resources/sidecar/"
-  if [[ ! -f "$CONTENTS/Resources/sidecar/server.js" ]]; then
-    echo "    warning: no server.js at the top of the sidecar directory." >&2
-    echo "    The app looks for Contents/Resources/sidecar/server.js." >&2
+  if [[ ! -f "$CONTENTS/Resources/sidecar/server.mjs" && ! -f "$CONTENTS/Resources/sidecar/server.js" ]]; then
+    echo "    warning: no server.mjs at the top of the sidecar directory." >&2
+    echo "    The app looks for Contents/Resources/sidecar/server.mjs, then server.js." >&2
   fi
   if [[ ! -x "$CONTENTS/Resources/sidecar/node" ]]; then
     echo "    note: no bundled node runtime; the app will fall back to one on disk." >&2

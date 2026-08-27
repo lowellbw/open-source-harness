@@ -93,6 +93,9 @@ enum RunEndReason: String, Decodable {
 
 enum ApprovalDecision: String, Codable {
     case allow, deny
+    /// Consent to the whole class of action for this session, not just this
+    /// instance. Offered only when the request carries a `scope`.
+    case session
 }
 
 enum FileOperation: String, Decodable {
@@ -105,6 +108,15 @@ struct ApprovalRequest: Identifiable, Equatable {
     let reason: String
     let irreversible: Bool
     let payload: JSONValue
+
+    /// The class of action, when the user may consent to all of it for the session
+    /// rather than to this instance — `python`, `shell`.
+    ///
+    /// Arbitrary code cannot be judged reversible in advance, so it has to be gated;
+    /// but prompting on every cell of an analysis is what §9 warns against, because
+    /// it manufactures consent rather than obtaining it. By the fourth prompt nobody
+    /// is reading. Where this is set the sheet offers a third answer.
+    let scope: String?
 
     var id: String { approvalId }
 }
@@ -198,7 +210,7 @@ extension WorkspaceEvent: Decodable {
     private enum CodingKeys: String, CodingKey {
         case type, threadId, reason, message, state, messageId, delta
         case toolCallId, name, args, result, isError
-        case approvalId, decision, irreversible, payload
+        case approvalId, decision, irreversible, payload, scope
         case strategy, beforeMessages, afterMessages, beforeTokens, afterTokens
         case cost
         case from, to, atCompactionBoundary
@@ -263,7 +275,8 @@ extension WorkspaceEvent: Decodable {
                 toolCallId: try container.decodeIfPresent(String.self, forKey: .toolCallId) ?? "",
                 reason: try container.decode(String.self, forKey: .reason),
                 irreversible: try container.decodeIfPresent(Bool.self, forKey: .irreversible) ?? true,
-                payload: try container.decodeIfPresent(JSONValue.self, forKey: .payload) ?? .null
+                payload: try container.decodeIfPresent(JSONValue.self, forKey: .payload) ?? .null,
+                scope: try container.decodeIfPresent(String.self, forKey: .scope)
             ))
         case "approval.resolved":
             self = .approvalResolved(

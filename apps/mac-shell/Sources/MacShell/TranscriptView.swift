@@ -376,6 +376,12 @@ private struct PayloadBlock: View {
                     .textSelection(.enabled)
                     .padding(Space.m)
             }
+            // A two-axis `ScrollView` centres content smaller than its viewport, and
+            // `maxWidth: .infinity` cannot correct it — an unbounded scroll axis
+            // proposes no width for the frame to fill. The anchor is the API that
+            // does. Without it a short JSON payload floated in the middle of the
+            // well with its indentation meaningless.
+            .defaultScrollAnchor(.topLeading)
             .frame(maxHeight: Metric.payloadMaxHeight)
             .well()
         }

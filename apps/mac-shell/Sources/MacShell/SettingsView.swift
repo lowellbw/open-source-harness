@@ -4,8 +4,8 @@ import SwiftUI
 struct SettingsView: View {
     var body: some View {
         TabView {
-            ProviderKeySettings()
-                .tabItem { Label("Provider Key", systemImage: "key") }
+            KeySettings()
+                .tabItem { Label("Keys", systemImage: "key") }
             SandboxSettings()
                 .tabItem { Label("Sandbox", systemImage: "lock.shield") }
         }
@@ -13,43 +13,66 @@ struct SettingsView: View {
     }
 }
 
-/// Local storage for a single provider API key.
+/// Local storage for the keys the sidecar needs.
 ///
-/// This exists for local and single-seat use. In a managed deployment the org's key
-/// lives in the gateway's KMS envelope and the shell never holds one: budgets, quotas
+/// This exists for local and single-seat use. In a managed deployment the org's keys
+/// live in the gateway's KMS envelope and the shell never holds one: budgets, quotas
 /// and model gating are enforced there precisely so that a client with a key cannot
 /// route around them.
-private struct ProviderKeySettings: View {
+private struct KeySettings: View {
+    var body: some View {
+        Form {
+            SecretSection(
+                account: KeychainAccount.providerAPIKey,
+                title: "Provider key",
+                prompt: "API key",
+                footer: "Required. Without it every route answers 500 and no turn can start."
+            )
+            SecretSection(
+                account: KeychainAccount.searchAPIKey,
+                title: "Search key",
+                prompt: "Brave Search API key",
+                // The Mac app rendered citations for a while with no way to produce
+                // one: the shell never passed a search key, so `BRAVE_API_KEY` was
+                // never set and the tool was simply absent from the model's toolset.
+                // A missing optional key degrades to "the model never searched",
+                // which is indistinguishable from "the model chose not to".
+                footer: "Optional. Without it the web-search tool is not offered to the "
+                    + "model at all, so answers are asserted rather than sourced — and "
+                    + "nothing on screen says so."
+            )
+        }
+        .formStyle(.grouped)
+    }
+}
+
+/// One write-only secret.
+private struct SecretSection: View {
     @EnvironmentObject private var services: AppServices
+
+    let account: String
+    let title: String
+    let prompt: String
+    let footer: String
 
     @State private var secret = ""
     @State private var hasStoredKey = false
     @State private var status: SettingsStatus?
 
     var body: some View {
-        Form {
-            Section {
-                SecureField("API key", text: $secret)
-                    .textFieldStyle(.roundedBorder)
+        Section {
+            SecureField(prompt, text: $secret)
+                .textFieldStyle(.roundedBorder)
 
-                HStack {
-                    Button("Save") { save() }
-                        .disabled(secret.isEmpty)
-                    Button("Remove") { remove() }
-                        .disabled(!hasStoredKey)
-                    Spacer()
-                    Text(hasStoredKey ? "A key is stored" : "No key stored")
-                        .font(Typo.caption)
-                        .foregroundStyle(.dsMuted)
-                }
-            } header: {
-                Text("Provider key")
-            } footer: {
-                Text("Stored in the login keychain under \(services.keychain.service). "
-                     + "The value is never written to disk by this app and never leaves the machine "
-                     + "except to the provider you configured.")
-                .font(Typo.caption)
-                .foregroundStyle(.dsMuted)
+            HStack {
+                Button("Save") { save() }
+                    .disabled(secret.isEmpty)
+                Button("Remove") { remove() }
+                    .disabled(!hasStoredKey)
+                Spacer()
+                Text(hasStoredKey ? "A key is stored" : "No key stored")
+                    .font(Typo.caption)
+                    .foregroundStyle(.dsMuted)
             }
 
             if let status {
@@ -59,8 +82,14 @@ private struct ProviderKeySettings: View {
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
             }
+        } header: {
+            Text(title)
+        } footer: {
+            Text("\(footer) Stored in the login keychain under \(services.keychain.service). "
+                 + "The value is never written to disk by this app.")
+            .font(Typo.caption)
+            .foregroundStyle(.dsMuted)
         }
-        .formStyle(.grouped)
         .onAppear { refresh() }
     }
 
@@ -73,7 +102,7 @@ private struct ProviderKeySettings: View {
     ///   never visible for a single frame.
     private func refresh(clearStatus: Bool = true) {
         do {
-            hasStoredKey = try services.keychain.contains(account: KeychainAccount.providerAPIKey)
+            hasStoredKey = try services.keychain.contains(account: account)
             if clearStatus { status = nil }
         } catch {
             hasStoredKey = false
@@ -83,7 +112,7 @@ private struct ProviderKeySettings: View {
 
     private func save() {
         do {
-            try services.keychain.write(secret, account: KeychainAccount.providerAPIKey)
+            try services.keychain.write(secret, account: account)
             secret = ""
             status = .success("Saved. Restart the sidecar (⇧⌘R) to apply it.")
         } catch {
@@ -94,7 +123,7 @@ private struct ProviderKeySettings: View {
 
     private func remove() {
         do {
-            try services.keychain.delete(account: KeychainAccount.providerAPIKey)
+            try services.keychain.delete(account: account)
             status = .success("Removed.")
         } catch {
             status = .failure(error.localizedDescription)

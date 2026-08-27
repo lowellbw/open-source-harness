@@ -129,23 +129,26 @@ final class SidecarController: ObservableObject {
     /// A failure here must also not stop the workspace from starting: most
     /// deployments have no local key at all, and the ones that do would rather see
     /// the sidecar report a missing credential than see no window.
-    private func readProviderKey() async -> String? {
+    private func readSecrets() async -> SidecarSecrets {
         let keychain = self.keychain
         return await Task.detached(priority: .userInitiated) {
-            (try? keychain.read(account: KeychainAccount.providerAPIKey)) ?? nil
+            SidecarSecrets(
+                providerAPIKey: (try? keychain.read(account: KeychainAccount.providerAPIKey)) ?? nil,
+                searchAPIKey: (try? keychain.read(account: KeychainAccount.searchAPIKey)) ?? nil
+            )
         }.value
     }
 
     private func launch() {
         Task { @MainActor in
-            let key = await readProviderKey()
+            let secrets = await readSecrets()
             // The generation may have moved while the prompt was on screen.
             guard !self.stopping, self.process == nil else { return }
-            self.launch(providerAPIKey: key)
+            self.launch(secrets: secrets)
         }
     }
 
-    private func launch(providerAPIKey: String?) {
+    private func launch(secrets: SidecarSecrets) {
 
         // Resolved on every launch rather than cached, so a key saved in Settings and
         // a Restart Sidecar are enough to apply it.
@@ -153,7 +156,7 @@ final class SidecarController: ObservableObject {
         do {
             resolved = try SidecarLaunchSpec.resolve(
                 dataDirectory: dataDirectory,
-                providerAPIKey: providerAPIKey
+                secrets: secrets
             )
         } catch let failure as SidecarFailure {
             state = .failed(failure)

@@ -168,7 +168,8 @@ struct DesignFixture {
                 "path": .string("/src/analyse.py"),
                 "bytes": .number(1806),
                 "overwrites": .bool(true),
-            ])
+            ]),
+            scope: "python"
         )
         return fixture
     }

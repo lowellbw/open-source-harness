@@ -23,7 +23,7 @@ struct DesignGalleryWindow: View {
     /// screenshot cannot scroll. `AGENTIC_GALLERY_PAGE` picks the opening page so
     /// each one can be captured by relaunching.
     enum Page: String, CaseIterable, Identifiable {
-        case tokens, transcript, panes
+        case tokens, transcript, panes, approvals
 
         var id: String { rawValue }
         var title: String { rawValue.capitalized }
@@ -50,6 +50,7 @@ struct DesignGalleryWindow: View {
                     case .tokens: tokens
                     case .transcript: transcript
                     case .panes: panes
+                    case .approvals: approvals
                     }
                 }
                 .padding(Space.xl)
@@ -89,12 +90,7 @@ struct DesignGalleryWindow: View {
                         .card(radius: Radius.card)
                 }
 
-                GallerySection("Approval sheet") {
-                    if let approval = model.conversation.pendingApproval {
-                        ApprovalSheet(approval: approval) { _ in }
-                            .card(radius: Radius.card)
-                    }
-                }
+
         }
     }
 
@@ -116,6 +112,42 @@ struct DesignGalleryWindow: View {
                         .card(radius: Radius.card)
                 }
         }
+    }
+    /// Both shapes of the approval sheet, side by side.
+    ///
+    /// The pair is the point: the third button appears only when the request carries
+    /// a `scope`, and the two-button sheet has to keep looking deliberate rather than
+    /// like the three-button one with something missing.
+    private var approvals: some View {
+        GallerySection("Approval sheet") {
+            VStack(alignment: .leading, spacing: Space.xl) {
+                VStack(alignment: .leading, spacing: Space.s) {
+                    SectionLabel("Scoped — offers a session grant")
+                    if let approval = model.conversation.pendingApproval {
+                        ApprovalSheet(approval: approval) { _ in }
+                            .card(radius: Radius.card)
+                    }
+                }
+                VStack(alignment: .leading, spacing: Space.s) {
+                    SectionLabel("Unscoped — once or not at all")
+                    if let approval = model.conversation.pendingApproval {
+                        ApprovalSheet(approval: Self.unscoped(approval)) { _ in }
+                            .card(radius: Radius.card)
+                    }
+                }
+            }
+        }
+    }
+
+    private static func unscoped(_ approval: ApprovalRequest) -> ApprovalRequest {
+        ApprovalRequest(
+            approvalId: approval.approvalId,
+            toolCallId: approval.toolCallId,
+            reason: approval.reason,
+            irreversible: approval.irreversible,
+            payload: approval.payload,
+            scope: nil
+        )
     }
 }
 

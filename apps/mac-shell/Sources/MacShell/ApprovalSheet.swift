@@ -27,7 +27,7 @@ struct ApprovalSheet: View {
             Divider().overlay(.dsBorder)
             actions
         }
-        .frame(width: 520)
+        .frame(width: approval.scope == nil ? 520 : 600)
         // Bounded. `reason` is server-authored and unbounded, and with no cap a long
         // one grew the sheet past the bottom of the display, taking Allow and Deny
         // with it.
@@ -68,6 +68,12 @@ struct ApprovalSheet: View {
                     .textSelection(.enabled)
                     .padding(Space.m)
             }
+            // A two-axis `ScrollView` centres content smaller than its viewport, and
+            // `maxWidth: .infinity` cannot correct it — an unbounded scroll axis
+            // proposes no width for the frame to fill. The anchor is the API that
+            // does. Without it a short JSON payload floated in the middle of the
+            // well with its indentation meaningless.
+            .defaultScrollAnchor(.topLeading)
             .frame(maxHeight: 220)
             .well()
         }
@@ -86,7 +92,22 @@ struct ApprovalSheet: View {
             }
             Spacer(minLength: Space.s)
 
-            Button("Allow") { resolve(.allow) }
+            // The third answer, where the backend says one is available.
+            //
+            // Arbitrary code cannot be judged reversible in advance, so it has to be
+            // gated — but a prompt on every cell of an analysis manufactures consent
+            // rather than obtaining it, and by the fourth nobody is reading. This
+            // asks a question the user can actually answer once. The grant is per
+            // session and never written to disk: a persisted one is a standing
+            // permission nobody remembers giving.
+            if let scope = approval.scope {
+                Button("Allow \(scope) this session") { resolve(.session) }
+                    .buttonStyle(.bordered)
+                    .controlSize(.large)
+                    .help("Stops asking for \(scope) until you quit. Not remembered afterwards.")
+            }
+
+            Button("Allow once") { resolve(.allow) }
                 .buttonStyle(.borderedProminent)
                 .tint(.dsDanger)
                 .controlSize(.large)
