@@ -116,11 +116,36 @@ final class SidecarController: ObservableObject {
 
     // MARK: - Launch
 
+    /// Reads the provider key off the main thread.
+    ///
+    /// This must not be synchronous. Legacy-keychain items are ACL-bound to the
+    /// signing identity of the binary that created them, and every rebuild re-signs —
+    /// so the first launch after a build puts up a "wants to access your keychain"
+    /// prompt. Reading on the main actor meant the window did not draw at all until
+    /// that prompt was answered: the app looked hung, with no clue that a dialog was
+    /// waiting behind it. NOTES §4 predicted the prompt but not that it would freeze
+    /// the UI.
+    ///
+    /// A failure here must also not stop the workspace from starting: most
+    /// deployments have no local key at all, and the ones that do would rather see
+    /// the sidecar report a missing credential than see no window.
+    private func readProviderKey() async -> String? {
+        let keychain = self.keychain
+        return await Task.detached(priority: .userInitiated) {
+            (try? keychain.read(account: KeychainAccount.providerAPIKey)) ?? nil
+        }.value
+    }
+
     private func launch() {
-        // A failure to read the Keychain must not stop the workspace from starting:
-        // most deployments have no local key at all, and the ones that do would rather
-        // see the sidecar report a missing credential than see no window.
-        let providerAPIKey = (try? keychain.read(account: KeychainAccount.providerAPIKey)) ?? nil
+        Task { @MainActor in
+            let key = await readProviderKey()
+            // The generation may have moved while the prompt was on screen.
+            guard !self.stopping, self.process == nil else { return }
+            self.launch(providerAPIKey: key)
+        }
+    }
+
+    private func launch(providerAPIKey: String?) {
 
         // Resolved on every launch rather than cached, so a key saved in Settings and
         // a Restart Sidecar are enough to apply it.

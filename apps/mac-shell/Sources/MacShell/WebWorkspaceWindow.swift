@@ -17,7 +17,7 @@ struct WebWorkspaceWindow: View {
 
     var body: some View {
         ZStack {
-            Color(nsColor: .windowBackgroundColor).ignoresSafeArea()
+            Color.dsCanvas.ignoresSafeArea()
 
             if let endpoint = sidecar.state.endpoint {
                 WorkspaceWebView(
@@ -32,20 +32,22 @@ struct WebWorkspaceWindow: View {
                 }
                 .overlay {
                     if case .failed(let message) = loadState {
-                        VStack(spacing: 10) {
-                            Image(systemName: "exclamationmark.triangle")
-                                .font(.title2)
-                                .foregroundStyle(.orange)
+                        VStack(spacing: Space.m) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(Typo.heading)
+                                .foregroundStyle(.dsDanger)
                             Text("The web workspace did not load")
-                                .font(.headline)
+                                .font(Typo.subhead)
                             Text(message)
-                                .font(.callout)
-                                .foregroundStyle(.secondary)
+                                .font(Typo.secondary)
+                                .foregroundStyle(.dsMuted)
                                 .multilineTextAlignment(.center)
                                 .textSelection(.enabled)
                             Text(endpoint.url.absoluteString)
-                                .font(.system(.caption, design: .monospaced))
-                                .foregroundStyle(.tertiary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                                .font(Typo.monoSmall)
+                                .foregroundStyle(.dsMuted)
                                 .textSelection(.enabled)
                             Button("Reload") {
                                 loadState = .loading
@@ -53,17 +55,17 @@ struct WebWorkspaceWindow: View {
                             }
                             .keyboardShortcut(.defaultAction)
                         }
-                        .padding(28)
+                        .padding(Space.xxl)
                         .frame(maxWidth: 460)
-                        .background(Color(nsColor: .windowBackgroundColor))
+                        .card(radius: Radius.card)
                     }
                 }
             } else {
-                VStack(spacing: 10) {
+                VStack(spacing: Space.m) {
                     ProgressView().controlSize(.small)
                     Text("Waiting for the workspace server")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
+                        .font(Typo.secondary)
+                        .foregroundStyle(.dsMuted)
                 }
             }
         }

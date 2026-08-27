@@ -62,6 +62,15 @@ final class ConversationStore: ObservableObject {
     @Published private(set) var pendingApproval: ApprovalRequest?
     @Published private(set) var errorMessage: String?
 
+    /// Which tool calls and reasoning blocks are expanded.
+    ///
+    /// Held here rather than as `@State` on the row. `LazyVStack` discards off-screen
+    /// subviews and their state, so an expanded tool call silently re-collapsed the
+    /// moment you scrolled past it and back — constant in any transcript longer than
+    /// a screen.
+    @Published var expandedTools: Set<String> = []
+    @Published var expandedReasoning: Set<String> = []
+
     @Published private(set) var entries: [String: [DirEntry]] = [:]
     @Published private(set) var expandedDirectories: Set<String> = ["/"]
     @Published private(set) var connectors = ConnectorStatus()
@@ -102,7 +111,45 @@ final class ConversationStore: ObservableObject {
 
     init(library: SessionLibrary) {
         self.library = library
+        // Adopt whatever the library selected rather than defaulting to "default".
+        //
+        // These two were initialised independently and never reconciled: the library
+        // selects the most recent session, the store started on a literal "default",
+        // and the window title came from the library while the transcript came from
+        // the store. Every launch with existing history therefore showed a
+        // highlighted, titled conversation with an empty transcript underneath it.
+        if let selected = library.selectedID {
+            sessionID = selected
+            turns = library.transcript(for: selected)
+            scrollAnchor = turns.last?.id
+        }
     }
+
+    #if DEBUG
+    /// Injects canned state for the Design Gallery.
+    ///
+    /// The states that matter most to a redesign are the awkward ones to reach by
+    /// hand — a failed tool, a blocking approval, a compaction notice, prose with
+    /// real Markdown — and reaching them against the live sidecar costs money and
+    /// twenty seconds of waiting per screenshot. The data lives in
+    /// `DesignFixture.swift`; this is only the seam that lets it in, because `turns`
+    /// and friends are `private(set)` and an extension in another file cannot write
+    /// them.
+    func applyDesignFixture(_ fixture: DesignFixture) {
+        turns = fixture.turns
+        status = fixture.status
+        isStreaming = fixture.isStreaming
+        models = fixture.models
+        selectedModel = fixture.selectedModel
+        entries = fixture.entries
+        connectors = fixture.connectors
+        errorMessage = fixture.errorMessage
+        pendingApproval = fixture.pendingApproval
+        runCost = fixture.runCost
+        sessionCost = fixture.sessionCost
+        budgetRemaining = fixture.budgetRemaining
+    }
+    #endif
 
     // MARK: - Endpoint and session lifecycle
 
@@ -131,6 +178,8 @@ final class ConversationStore: ObservableObject {
         errorMessage = nil
         pendingApproval = nil
         status = .idle
+        expandedTools = []
+        expandedReasoning = []
         entries = [:]
         expandedDirectories = ["/"]
         scrollAnchor = turns.last?.id
@@ -486,6 +535,8 @@ final class ConversationStore: ObservableObject {
         errorMessage = nil
         pendingApproval = nil
         status = .idle
+        expandedTools = []
+        expandedReasoning = []
         entries = [:]
         expandedDirectories = ["/"]
 

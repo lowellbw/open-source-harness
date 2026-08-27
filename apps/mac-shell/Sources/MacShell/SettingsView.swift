@@ -9,7 +9,7 @@ struct SettingsView: View {
             SandboxSettings()
                 .tabItem { Label("Sandbox", systemImage: "lock.shield") }
         }
-        .frame(width: 560, height: 400)
+        .frame(width: 580, height: 460)
     }
 }
 
@@ -24,7 +24,7 @@ private struct ProviderKeySettings: View {
 
     @State private var secret = ""
     @State private var hasStoredKey = false
-    @State private var status = ""
+    @State private var status: SettingsStatus?
 
     var body: some View {
         Form {
@@ -39,8 +39,8 @@ private struct ProviderKeySettings: View {
                         .disabled(!hasStoredKey)
                     Spacer()
                     Text(hasStoredKey ? "A key is stored" : "No key stored")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(Typo.caption)
+                        .foregroundStyle(.dsMuted)
                 }
             } header: {
                 Text("Provider key")
@@ -48,15 +48,16 @@ private struct ProviderKeySettings: View {
                 Text("Stored in the login keychain under \(services.keychain.service). "
                      + "The value is never written to disk by this app and never leaves the machine "
                      + "except to the provider you configured.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(Typo.caption)
+                .foregroundStyle(.dsMuted)
             }
 
-            if !status.isEmpty {
-                Text(status)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            if let status {
+                Label(status.message, systemImage: status.symbol)
+                    .font(Typo.caption)
+                    .foregroundStyle(status.tone)
                     .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .formStyle(.grouped)
@@ -66,13 +67,17 @@ private struct ProviderKeySettings: View {
     /// Presence only. Reading the secret itself can put a keychain access prompt in
     /// front of the user every time this pane opens, and the pane has no use for the
     /// value — it is write-only from here.
-    private func refresh() {
+    /// - Parameter clearStatus: false when called straight after a save or a delete,
+    ///   which have just set a message the user needs to read. This used to clear it
+    ///   unconditionally, on the same run loop, so "Saved. Restart the sidecar…" was
+    ///   never visible for a single frame.
+    private func refresh(clearStatus: Bool = true) {
         do {
             hasStoredKey = try services.keychain.contains(account: KeychainAccount.providerAPIKey)
-            status = ""
+            if clearStatus { status = nil }
         } catch {
             hasStoredKey = false
-            status = error.localizedDescription
+            status = .failure(error.localizedDescription)
         }
     }
 
@@ -80,21 +85,21 @@ private struct ProviderKeySettings: View {
         do {
             try services.keychain.write(secret, account: KeychainAccount.providerAPIKey)
             secret = ""
-            status = "Saved. Restart the sidecar (Shift-Command-R) to apply it."
+            status = .success("Saved. Restart the sidecar (⇧⌘R) to apply it.")
         } catch {
-            status = error.localizedDescription
+            status = .failure(error.localizedDescription)
         }
-        refresh()
+        refresh(clearStatus: false)
     }
 
     private func remove() {
         do {
             try services.keychain.delete(account: KeychainAccount.providerAPIKey)
-            status = "Removed."
+            status = .success("Removed.")
         } catch {
-            status = error.localizedDescription
+            status = .failure(error.localizedDescription)
         }
-        refresh()
+        refresh(clearStatus: false)
     }
 }
 
@@ -111,12 +116,12 @@ private struct SandboxSettings: View {
     @State private var isRunning = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: Space.m) {
             Text("Workspace root")
-                .font(.headline)
+                .font(Typo.subhead)
             HStack {
                 Text(services.workspaceRoot.path)
-                    .font(.system(.caption, design: .monospaced))
+                    .font(Typo.monoSmall)
                     .lineLimit(1)
                     .truncationMode(.head)
                     .textSelection(.enabled)
@@ -129,10 +134,10 @@ private struct SandboxSettings: View {
             Divider()
 
             Text("Run under sandbox-exec")
-                .font(.headline)
+                .font(Typo.subhead)
             TextField("command", text: $command)
                 .textFieldStyle(.roundedBorder)
-                .font(.system(.body, design: .monospaced))
+                .font(Typo.mono)
                 .disabled(isRunning)
 
             HStack {
@@ -140,25 +145,25 @@ private struct SandboxSettings: View {
                     .disabled(isRunning || command.isEmpty)
                 Spacer()
                 Text("Deny by default, no network, writes confined to the workspace root.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(Typo.caption)
+                    .foregroundStyle(.dsMuted)
             }
 
             ScrollView {
                 Text(output.isEmpty ? "Denials are logged by the kernel. To watch them while tuning:\n\nlog stream --style compact --predicate 'senderImagePath CONTAINS \"Sandbox\"'" : output)
-                    .font(.system(.caption, design: .monospaced))
+                    .font(Typo.monoSmall)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(8)
+                    .padding(Space.m)
             }
-            .background(Color(nsColor: .textBackgroundColor))
-            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .background(Color.dsSurface)
+            .clipShape(Radius.shape(Radius.card))
             .overlay(
-                RoundedRectangle(cornerRadius: 6)
-                    .strokeBorder(Color(nsColor: .separatorColor))
+                Radius.shape(Radius.card)
+                    .strokeBorder(Color.dsBorder)
             )
         }
-        .padding(20)
+        .padding(Space.l)
     }
 
     private func run() {
@@ -192,5 +197,33 @@ private struct SandboxSettings: View {
             lines.append("\n--- stderr ---\n\(result.stderr)")
         }
         return lines.joined(separator: "\n")
+    }
+}
+
+
+/// A settings message with a role, so a success and a Keychain failure do not render
+/// identically in grey.
+enum SettingsStatus {
+    case success(String)
+    case failure(String)
+
+    var message: String {
+        switch self {
+        case .success(let text), .failure(let text): return text
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .success: return "checkmark.circle.fill"
+        case .failure: return "exclamationmark.triangle.fill"
+        }
+    }
+
+    var tone: Color {
+        switch self {
+        case .success: return .dsOK
+        case .failure: return .dsDanger
+        }
     }
 }

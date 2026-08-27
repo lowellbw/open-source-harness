@@ -65,6 +65,16 @@ struct MacShellApp: App {
         }
         .defaultSize(width: 1100, height: 760)
 
+        #if DEBUG
+        // Every component in every state, deterministically. See DesignGallery.swift
+        // for why this is a window rather than a mode.
+        Window("Design Gallery", id: Self.galleryWindowID) {
+            DesignGalleryWindow()
+                .frame(minWidth: 900, minHeight: 600)
+        }
+        .defaultSize(width: 1100, height: 900)
+        #endif
+
         Settings {
             SettingsView()
                 .environmentObject(AppServices.shared)
@@ -74,6 +84,7 @@ struct MacShellApp: App {
 
     static let mainWindowID = "workspace"
     static let webWindowID = "web-workspace"
+    static let galleryWindowID = "design-gallery"
 }
 
 /// Menu items that act on the shell rather than on the content inside it.
@@ -136,10 +147,18 @@ struct WorkspaceCommands: Commands {
 
             Divider()
 
+            // Was ⌥⌘W, which shadows the system's Close All Windows.
             Button("Show Web Workspace") {
                 openWindow(id: MacShellApp.webWindowID)
             }
-            .keyboardShortcut("w", modifiers: [.command, .option])
+            .keyboardShortcut("2", modifiers: [.command, .shift])
+
+            #if DEBUG
+            Button("Design Gallery") {
+                openWindow(id: MacShellApp.galleryWindowID)
+            }
+            .keyboardShortcut("g", modifiers: [.command, .option])
+            #endif
         }
     }
 }
@@ -152,6 +171,11 @@ struct WorkspaceCommands: Commands {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Set before anything draws. Capturing dark mode by flipping the user's
+        // system appearance is both rude and slow; this is per-process.
+        if let appearance = Theme.appearanceOverride {
+            NSApp.appearance = appearance
+        }
         AppServices.shared.start()
 
         // Deferred one turn: SwiftUI has not created the window yet at this point,

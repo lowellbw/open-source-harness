@@ -13,12 +13,23 @@ struct RootView: View {
     @EnvironmentObject private var sidecar: SidecarController
     @EnvironmentObject private var conversation: ConversationStore
 
+    @Environment(\.openWindow) private var openWindow
+
     var body: some View {
         content
             // The endpoint moves on every sidecar restart, and the API client is built
             // around it. Connecting here, from the one view that is always mounted,
             // keeps that in one place instead of spread across the views that use it.
-            .onAppear { conversation.connect(to: sidecar.state.endpoint) }
+            .onAppear {
+                conversation.connect(to: sidecar.state.endpoint)
+                #if DEBUG
+                // So the gallery can be captured headlessly. Opening it from the menu
+                // needs a keystroke, and Accessibility is not always granted.
+                if ProcessInfo.processInfo.environment["AGENTIC_GALLERY"] == "1" {
+                    openWindow(id: MacShellApp.galleryWindowID)
+                }
+                #endif
+            }
             .onChange(of: sidecar.state.endpoint) { _, endpoint in
                 conversation.connect(to: endpoint)
             }
@@ -103,15 +114,16 @@ private struct WorkspaceView: View {
         HSplitView {
             if showSessions {
                 SessionListView()
-                    .frame(minWidth: 190, idealWidth: 235, maxWidth: 340)
+                    .frame(minWidth: Layout.sidebarMin, idealWidth: Layout.sidebarIdeal, maxWidth: Layout.sidebarMax)
             }
 
-            conversation_column
+            conversationColumn
                 .frame(minWidth: 440, maxWidth: .infinity)
+                .background(.dsCanvas)
 
             if showInspector {
                 SidebarView()
-                    .frame(minWidth: 220, idealWidth: 280, maxWidth: 420)
+                    .frame(minWidth: Layout.inspectorMin, idealWidth: Layout.inspectorIdeal, maxWidth: Layout.inspectorMax)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -140,10 +152,13 @@ private struct WorkspaceView: View {
         }
     }
 
-    private var conversation_column: some View {
+    private var conversationColumn: some View {
         VStack(spacing: 0) {
             if conversation.isArchived {
-                ArchivedBanner()
+                InlineBanner(
+                    tone: .info,
+                    message: "Archived conversation. The agent has no memory of this thread — anything you send starts a fresh context."
+                )
             }
             TranscriptView()
             Divider()
@@ -217,30 +232,8 @@ private struct WorkspaceToolbar: ToolbarContent {
             } label: {
                 Label("Workspace", systemImage: "sidebar.trailing")
             }
-            .help("Show or hide the workspace files and connectors (⌥⌘I)")
+            .help("Show or hide the workspace files and connectors")
         }
-    }
-}
-
-/// Shown above a conversation whose server-side state is gone.
-///
-/// The transcript is on disk and reads fine; the agent has no memory of it, because
-/// session state lives in the sidecar's process and the sidecar has restarted since.
-/// Sending into it starts a fresh context that happens to sit under an old record.
-private struct ArchivedBanner: View {
-    var body: some View {
-        HStack(spacing: 7) {
-            Image(systemName: "clock.arrow.circlepath")
-            Text("Archived conversation. The agent has no memory of this thread — anything you send starts a fresh context.")
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 0)
-        }
-        .font(.caption)
-        .foregroundStyle(.secondary)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 7)
-        .background(Color(nsColor: .quaternarySystemFill))
-        .overlay(alignment: .bottom) { Divider() }
     }
 }
 
@@ -249,21 +242,30 @@ private struct StatusPill: View {
     let isStreaming: Bool
 
     var body: some View {
-        HStack(spacing: 5) {
-            if isStreaming && state != .idle {
-                ProgressView().controlSize(.small).scaleEffect(0.55).frame(width: 10)
-            } else {
-                Image(systemName: state.symbol)
-                    .font(.system(size: 8))
-                    .foregroundStyle(state == .awaitingApproval ? .orange : .green)
-            }
+        HStack(spacing: Space.xs) {
+            StatusDot(color: colour, label: state.label)
             Text(state.label)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(Typo.caption)
+                .foregroundStyle(.dsMuted)
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 3)
-        .background(Color(nsColor: .quaternarySystemFill), in: Capsule())
+        .breathing(isStreaming && state != .idle)
+        .padding(.horizontal, Space.s)
+        .padding(.vertical, Space.xs)
+        .background(.dsSurface, in: Capsule())
+        .overlay(Capsule().strokeBorder(.dsBorder, lineWidth: Metric.hairline))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Agent status: \(state.label)")
+    }
+
+    /// `.awaitingApproval` is the only state that wants the user's attention; the
+    /// rest are progress. It used to be orange — the app's error colour — and every
+    /// other state, including `.compacting`, was green.
+    private var colour: Color {
+        switch state {
+        case .awaitingApproval: return .dsAccent
+        case .idle: return .dsOK
+        default: return .dsMuted
+        }
     }
 }
 
@@ -276,7 +278,7 @@ private struct StatusScreen<Content: View>: View {
 
     var body: some View {
         ZStack {
-            Color(nsColor: .windowBackgroundColor)
+            Color.dsCanvas
                 .ignoresSafeArea()
             content
         }
@@ -288,19 +290,19 @@ private struct StatusPanel: View {
     let detail: String?
 
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: Space.m) {
             ProgressView()
                 .controlSize(.small)
             Text(title)
-                .font(.headline)
+                .font(Typo.subhead)
             if let detail {
                 Text(detail)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .font(Typo.caption)
+                    .foregroundStyle(.dsMuted)
                     .multilineTextAlignment(.center)
             }
         }
-        .padding(32)
+        .padding(Space.xxl)
         .frame(maxWidth: 460)
     }
 }
@@ -315,17 +317,17 @@ private struct FailurePanel: View {
     var secondaryAction: (() -> Void)? = nil
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(alignment: .firstTextBaseline, spacing: 10) {
-                Image(systemName: "exclamationmark.triangle")
-                    .foregroundStyle(.orange)
+        VStack(alignment: .leading, spacing: Space.l) {
+            HStack(alignment: .firstTextBaseline, spacing: Space.s) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.dsDanger)
                 Text(title)
-                    .font(.headline)
+                    .font(Typo.subhead)
             }
 
             Text(detail)
-                .font(.callout)
-                .foregroundStyle(.secondary)
+                .font(Typo.secondary)
+                .foregroundStyle(.dsMuted)
                 // Every string in this panel is something the user will be asked to
                 // paste into a bug report.
                 .textSelection(.enabled)
@@ -334,17 +336,17 @@ private struct FailurePanel: View {
             if !output.isEmpty {
                 ScrollView {
                     Text(output.joined(separator: "\n"))
-                        .font(.system(.caption, design: .monospaced))
+                        .font(Typo.monoSmall)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(8)
+                        .padding(Space.s)
                 }
                 .frame(maxHeight: 180)
-                .background(Color(nsColor: .textBackgroundColor))
-                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .background(Color.dsSurface)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.card))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 6)
-                        .strokeBorder(Color(nsColor: .separatorColor))
+                    RoundedRectangle(cornerRadius: Radius.card)
+                        .strokeBorder(Color.dsBorder)
                 )
             }
 
@@ -356,7 +358,7 @@ private struct FailurePanel: View {
                 }
             }
         }
-        .padding(28)
+        .padding(Space.xxl)
         .frame(maxWidth: 560)
     }
 }

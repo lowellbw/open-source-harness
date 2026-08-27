@@ -23,16 +23,21 @@ struct ComposerView: View {
     var body: some View {
         VStack(spacing: 0) {
             if let message = conversation.errorMessage {
-                ErrorBanner(message: message) { conversation.dismissError() }
+                InlineBanner(tone: .error, message: message) { conversation.dismissError() }
             }
 
-            HStack(alignment: .bottom, spacing: 8) {
+            HStack(alignment: .bottom, spacing: Space.s) {
                 ZStack(alignment: .topLeading) {
                     if text.isEmpty {
                         Text(conversation.canSend ? "Ask for something…" : "Waiting for the workspace…")
-                            .foregroundStyle(.tertiary)
-                            .padding(.horizontal, 9)
-                            .padding(.vertical, 8)
+                            .font(Typo.body)
+                            .foregroundStyle(.dsMuted)
+                            // Aligned to where the caret actually is: the text
+                            // container inset plus NSTextContainer's default 5pt
+                            // lineFragmentPadding. It used to sit at 9/8 against the
+                            // text view's 5/7, so the first character jumped.
+                            .padding(.leading, Metric.composerInset.width + 5)
+                            .padding(.vertical, Metric.composerInset.height)
                             .allowsHitTesting(false)
                     }
                     SubmittingTextView(
@@ -44,34 +49,36 @@ struct ComposerView: View {
                     )
                     .frame(height: measuredHeight)
                 }
-                .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .background(Color.dsSurface, in: Radius.shape(Radius.surface))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .strokeBorder(Color(nsColor: .separatorColor))
+                    Radius.shape(Radius.surface)
+                        .strokeBorder(Color.dsBorder)
                 )
 
                 if conversation.isStreaming {
                     Button(action: conversation.cancelTurn) {
-                        Image(systemName: "stop.fill")
+                        Label("Stop", systemImage: "stop.fill")
+                            .labelStyle(.iconOnly)
                             .frame(width: 22, height: 22)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.secondary)
+                    .buttonStyle(.bordered)
                     .help("Stop following this turn. The agent keeps working — there is no way to interrupt a tool call that has already started.")
                 } else {
                     Button(action: submit) {
-                        Image(systemName: "arrow.up")
+                        Label("Send", systemImage: "arrow.up")
+                            .labelStyle(.iconOnly)
                             .frame(width: 22, height: 22)
                     }
                     .buttonStyle(.borderedProminent)
+                    .tint(.dsAccent)
                     .disabled(!conversation.canSend || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     .help("Send (Return)")
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 11)
+            .padding(.horizontal, Space.l)
+            .padding(.vertical, Space.m)
         }
-        .background(.bar)
+        .chromeSurface()
     }
 
     private func submit() {
@@ -79,32 +86,6 @@ struct ComposerView: View {
         let outgoing = text
         text = ""
         conversation.send(outgoing)
-    }
-}
-
-private struct ErrorBanner: View {
-    let message: String
-    let dismiss: () -> Void
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.orange)
-            Text(message)
-                .font(.callout)
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 4)
-            Button(action: dismiss) {
-                Image(systemName: "xmark")
-            }
-            .buttonStyle(.borderless)
-            .foregroundStyle(.secondary)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-        .background(Color.orange.opacity(0.12))
-        .overlay(alignment: .bottom) { Divider() }
     }
 }
 
@@ -154,7 +135,7 @@ private struct SubmittingTextView: NSViewRepresentable {
             textView.string = text
         }
         textView.isEditable = isEnabled
-        textView.textColor = isEnabled ? .textColor : .disabledControlTextColor
+        textView.textColor = isEnabled ? Palette.text.ns : Palette.muted.ns
 
         if context.coordinator.lastFocusRequest != focusRequest {
             context.coordinator.lastFocusRequest = focusRequest

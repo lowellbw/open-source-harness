@@ -23,6 +23,7 @@ struct SessionListView: View {
             }
         }
         .listStyle(.sidebar)
+        .layoutProbe("sessions")
         // A field in the sidebar rather than `.searchable`.
         //
         // `.searchable(placement: .sidebar)` only lands in a sidebar when there is a
@@ -30,7 +31,7 @@ struct SessionListView: View {
         // the field is pushed into the window toolbar, on the far side from the list it
         // filters. This is the same control, where it belongs.
         .safeAreaInset(edge: .top, spacing: 0) {
-            HStack(spacing: 5) {
+            HStack(spacing: Space.xs) {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(.secondary)
                     .font(.caption)
@@ -40,19 +41,21 @@ struct SessionListView: View {
                     Button {
                         library.searchText = ""
                     } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(.secondary)
+                        Label("Clear search", systemImage: "xmark.circle.fill")
+                            .labelStyle(.iconOnly)
+                            .foregroundStyle(.dsMuted)
+                            .hitTarget(20)
                     }
                     .buttonStyle(.plain)
                 }
             }
-            .padding(.horizontal, 7)
-            .padding(.vertical, 4)
-            .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
-            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color(nsColor: .separatorColor)))
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .background(.bar)
+            .padding(.horizontal, Space.s)
+            .padding(.vertical, Space.xs)
+            .background(Color.dsSurface, in: Radius.shape(Radius.small))
+            .overlay(Radius.shape(Radius.small).strokeBorder(Color.dsBorder))
+            .padding(.horizontal, Space.m)
+            .padding(.vertical, Space.s)
+            .chromeSurface()
         }
         .overlay {
             if library.sessions.isEmpty {
@@ -70,13 +73,21 @@ struct SessionListView: View {
                 conversation.startNewSession()
             } label: {
                 Label("New Conversation", systemImage: "square.and.pencil")
+                    .font(Typo.secondary)
+                    // Padding inside the label, not outside the Button. Outside, the
+                    // 14pt side strips and 9pt top/bottom strips were not
+                    // hit-testable, so clicking the obvious bar near its edges did
+                    // nothing.
+                    .padding(.horizontal, Space.m)
+                    .padding(.vertical, Space.s)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 9)
-            .background(.bar)
-            .overlay(alignment: .top) { Divider() }
+            .chromeSurface()
+            .overlay(alignment: .top) {
+                Rectangle().fill(.dsBorder).frame(height: Metric.hairline)
+            }
         }
     }
 
@@ -103,13 +114,19 @@ struct SessionListView: View {
                 .onSubmit { commitRename(session.id) }
                 .onExitCommand { renamingID = nil }
         } else {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: Space.hair) {
                 Text(session.title)
+                    .font(Typo.body)
+                    // Explicit, not inherited. A `.sidebar` list is vibrant, and
+                    // vibrancy desaturates unemphasised label colours — the row
+                    // titles came out as pale grey against a pale material.
+                    .foregroundStyle(.dsText)
                     .lineLimit(1)
                     .truncationMode(.tail)
 
-                HStack(spacing: 5) {
+                HStack(spacing: Space.xs) {
                     Text(Self.relative(session.updatedAt))
+                        .monospacedDigit()
                     if session.turnCount > 0 {
                         Text("·")
                         Text("\(session.turnCount) turn\(session.turnCount == 1 ? "" : "s")")
@@ -125,10 +142,11 @@ struct SessionListView: View {
                             .help("Archived. The agent has no memory of this conversation — the sidecar restarted since.")
                     }
                 }
-                .font(.caption2)
-                .foregroundStyle(.secondary)
+                .font(Typo.micro)
+                .foregroundStyle(.dsMuted)
+                .lineLimit(1)
             }
-            .padding(.vertical, 2)
+            .padding(.vertical, Space.hair)
             .contextMenu {
                 Button("Rename…") {
                     draftTitle = session.title

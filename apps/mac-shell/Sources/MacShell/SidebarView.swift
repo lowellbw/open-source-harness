@@ -10,9 +10,18 @@ struct SidebarView: View {
     var body: some View {
         VStack(spacing: 0) {
             FileTree()
-            Divider()
+            Divider().overlay(.dsBorder)
             ConnectorsPane()
         }
+        // Opaque, and deliberately not vibrant. Vibrancy belongs to the navigation
+        // surface on the leading edge; this pane is dense small monospaced text —
+        // file names, sizes, tool names — where translucency costs legibility. Xcode
+        // does the same: vibrant navigator, opaque inspector.
+        .background(.dsInspector)
+        .overlay(alignment: .leading) {
+            Rectangle().fill(.dsBorder).frame(width: Metric.hairline)
+        }
+        .layoutProbe("inspector")
     }
 }
 
@@ -30,7 +39,9 @@ private struct FileTree: View {
                 Button {
                     NSWorkspace.shared.activateFileViewerSelecting([services.workspaceRoot])
                 } label: {
-                    Image(systemName: "arrow.up.forward.app")
+                    Label("Reveal in Finder", systemImage: "arrow.up.forward.app")
+                        .labelStyle(.iconOnly)
+                        .hitTarget(22)
                 }
                 .buttonStyle(.borderless)
                 .help("Reveal the workspace folder in Finder")
@@ -38,7 +49,9 @@ private struct FileTree: View {
                 Button {
                     Task { await conversation.refreshFiles(path: "/") }
                 } label: {
-                    Image(systemName: "arrow.clockwise")
+                    Label("Refresh workspace files", systemImage: "arrow.clockwise")
+                        .labelStyle(.iconOnly)
+                        .hitTarget(22)
                 }
                 .buttonStyle(.borderless)
                 .help("Refresh")
@@ -46,8 +59,15 @@ private struct FileTree: View {
 
             List(flattened, id: \.entry.id) { row in
                 FileRow(entry: row.entry, depth: row.depth)
+                    .listRowSeparator(.hidden)
+                    .listRowInsets(EdgeInsets(top: 0, leading: Space.s,
+                                              bottom: 0, trailing: Space.s))
             }
-            .listStyle(.sidebar)
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            // No row separators: this is a file tree, and rules between rows fight
+            // the indentation that carries the hierarchy.
+            .environment(\.defaultMinListRowHeight, 24)
             .overlay {
                 if (conversation.entries["/"] ?? []).isEmpty {
                     VStack(spacing: 6) {
@@ -72,7 +92,7 @@ private struct FileTree: View {
             }
             .overlay {
                 if isTargeted {
-                    RoundedRectangle(cornerRadius: 6)
+                    RoundedRectangle(cornerRadius: Radius.small)
                         .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 2, dash: [5]))
                         .padding(4)
                         .allowsHitTesting(false)
@@ -123,41 +143,58 @@ private struct FileRow: View {
     let depth: Int
 
     var body: some View {
-        HStack(spacing: 5) {
+        // A real Button for a directory, so the tree can be reached by keyboard and
+        // announced by VoiceOver. `onTapGesture` — which this replaces — is neither
+        // focusable nor an accessibility element, so the file tree was mouse-only.
+        if entry.isDirectory {
+            Button { conversation.toggleDirectory(entry) } label: { row }
+                .buttonStyle(.plain)
+                .accessibilityLabel(entry.name)
+                .accessibilityValue(conversation.expandedDirectories.contains(entry.path)
+                                    ? "Expanded" : "Collapsed")
+                .accessibilityHint("Shows the contents of this folder")
+        } else {
+            row
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("\(entry.name), \(Format.bytes(entry.size))")
+        }
+    }
+
+    private var row: some View {
+        HStack(spacing: Space.xs) {
             if entry.isDirectory {
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                    .imageScale(.small)
+                    .foregroundStyle(.dsMuted)
                     .rotationEffect(.degrees(conversation.expandedDirectories.contains(entry.path) ? 90 : 0))
-                    .frame(width: 10)
+                    .frame(width: Space.m)
             } else {
-                Spacer().frame(width: 10)
+                Spacer().frame(width: Space.m)
             }
 
             // The real document icon from Launch Services, so a .csv looks like a
             // .csv. A hand-picked SF Symbol per extension is a losing game.
             Image(nsImage: Self.icon(for: entry))
                 .resizable()
-                .frame(width: 15, height: 15)
+                .frame(width: Metric.rowIcon, height: Metric.rowIcon)
 
             Text(entry.name)
                 .lineLimit(1)
                 .truncationMode(.middle)
 
-            Spacer(minLength: 4)
+            Spacer(minLength: Space.xs)
 
             if !entry.isDirectory {
                 Text(Format.bytes(entry.size))
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                    .font(Typo.micro)
+                    .foregroundStyle(.dsMuted)
                     .monospacedDigit()
+                    .lineLimit(1)
+                    .fixedSize()
             }
         }
-        .padding(.leading, CGFloat(depth) * 12)
+        .padding(.leading, CGFloat(depth) * Space.m)
         .contentShape(Rectangle())
-        .onTapGesture {
-            if entry.isDirectory { conversation.toggleDirectory(entry) }
-        }
         .contextMenu {
             if !entry.isDirectory {
                 Button("Save a Copy…") { save() }
@@ -205,13 +242,15 @@ private struct ConnectorsPane: View {
                         .font(.caption2.weight(.semibold))
                         .padding(.horizontal, 5)
                         .padding(.vertical, 1)
-                        .background(Color.orange, in: Capsule())
-                        .foregroundStyle(.white)
+                        .background(.dsAccent, in: Capsule())
+                        .foregroundStyle(.dsOnAccent)
                 }
                 Button {
                     Task { await conversation.refreshConnectors() }
                 } label: {
-                    Image(systemName: "arrow.clockwise")
+                    Label("Refresh connectors", systemImage: "arrow.clockwise")
+                        .labelStyle(.iconOnly)
+                        .hitTarget(22)
                 }
                 .buttonStyle(.borderless)
                 .help("Refresh connectors")
@@ -229,7 +268,7 @@ private struct ConnectorsPane: View {
                     ForEach(status.servers) { server in
                         HStack(spacing: 6) {
                             Circle()
-                                .fill(server.status == "connected" ? Color.green : Color.secondary)
+                                .fill(server.status == "connected" ? Color.dsOK : Color.dsMuted)
                                 .frame(width: 6, height: 6)
                             Text(server.name ?? server.id)
                                 .font(.caption)
@@ -244,9 +283,9 @@ private struct ConnectorsPane: View {
                     }
 
                     ForEach(status.errors) { error in
-                        Label(error.message, systemImage: "exclamationmark.triangle")
+                        Label(error.message, systemImage: "exclamationmark.triangle.fill")
                             .font(.caption2)
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(.dsDanger)
                             .lineLimit(2)
                     }
 
@@ -292,10 +331,10 @@ private struct PendingToolRow: View {
                     .truncationMode(.middle)
                 if tool.hasChanged {
                     Text("CHANGED")
-                        .font(.system(size: 8, weight: .bold))
+                        .font(Typo.micro)
                         .padding(.horizontal, 3)
-                        .background(Color.orange.opacity(0.25), in: RoundedRectangle(cornerRadius: 3))
-                        .foregroundStyle(.orange)
+                        .background(Palette.danger.opacity(0.12), in: RoundedRectangle(cornerRadius: Radius.inline))
+                        .foregroundStyle(.dsDanger)
                 }
             }
             if !tool.description.isEmpty {
@@ -306,11 +345,11 @@ private struct PendingToolRow: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             Button("Approve") { conversation.approveTool(tool.qualifiedName) }
-                .controlSize(.mini)
+                .controlSize(.small)
         }
         .padding(7)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(nsColor: .quaternarySystemFill), in: RoundedRectangle(cornerRadius: 6))
+        .background(Color.dsSurface, in: RoundedRectangle(cornerRadius: Radius.small))
     }
 }
 
@@ -326,7 +365,7 @@ private struct SectionHeader<Accessory: View>: View {
             Label(title, systemImage: systemImage)
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
-            Spacer(minLength: 4)
+            Spacer(minLength: Space.xs)
             accessory
                 .font(.caption)
                 .foregroundStyle(.secondary)
