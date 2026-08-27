@@ -29,9 +29,25 @@ enum WorkspaceEvent {
     case approvalRequested(ApprovalRequest)
     case approvalResolved(approvalId: String, decision: ApprovalDecision)
 
+    /// One model request inside a turn. A turn that calls three tools is four of
+    /// these, and the per-step cost is the thing that explains a surprising bill.
+    case stepStarted(stepNumber: Int, activeTools: [String]?)
+    case stepFinished(StepReport)
+
+    /// A read-only research scout. Its own stream deliberately never crosses the
+    /// boundary — forwarding it would put the scout's transcript in front of the
+    /// reader, which is the cost the scout exists to avoid.
+    case subagentStarted(subagentId: String, task: String)
+    case subagentFinished(SubagentReport)
+
+    /// A page the model cited. Provider-side search produces no tool call at all,
+    /// so this event is the only trace — without it a searched answer is
+    /// indistinguishable from an asserted one.
+    case sourceCited(messageId: String, url: String, title: String)
+
     case contextCompacted(Compaction)
     case modelSwitched(from: String, to: String, atCompactionBoundary: Bool)
-    case costUpdated(run: CostBuckets, session: CostBuckets)
+    case costUpdated(run: CostBuckets, session: CostBuckets, delta: CostBuckets, model: String)
     case fileChanged(path: String, op: FileOperation)
 
     /// A type this build does not know about. Carried so it can be logged.
@@ -93,6 +109,29 @@ struct ApprovalRequest: Identifiable, Equatable {
     var id: String { approvalId }
 }
 
+struct StepReport: Equatable {
+    let stepNumber: Int
+    let cost: CostBuckets
+    let toolCalls: Int
+    let durationMs: Double?
+    /// Absent from a mocked provider and present from a live one, so optional in the
+    /// protocol rather than assumed.
+    let finishReason: String?
+}
+
+struct SubagentReport: Equatable {
+    enum StoppedBy: String, Decodable {
+        case complete
+        case budgetExceeded = "budget_exceeded"
+        case error
+    }
+
+    let subagentId: String
+    let cost: CostBuckets
+    let stoppedBy: StoppedBy
+    let reportChars: Int
+}
+
 struct Compaction: Equatable {
     let strategy: String
     let beforeMessages: Int
@@ -112,6 +151,13 @@ struct CostBuckets: Codable, Equatable {
     var cacheReadTokens: Int = 0
     var outputTokens: Int = 0
     var reasoningTokens: Int = 0
+    /// Server-side web searches, counted rather than measured in tokens.
+    ///
+    /// Deliberately **not** part of `totalTokens` — it is a count, priced per call
+    /// at roughly a cent, which is more than a whole cheap-tier turn. Leaving it out
+    /// made `usd` impossible to reconcile against the token breakdown: five searches
+    /// is five cents with nothing to attribute it to.
+    var webSearches: Int = 0
     var usd: Double = 0
 
     static let zero = CostBuckets()
@@ -124,7 +170,7 @@ struct CostBuckets: Codable, Equatable {
     /// that would otherwise generate this too.
     private enum CodingKeys: String, CodingKey {
         case uncachedInputTokens, cacheWriteTokens, cacheReadTokens
-        case outputTokens, reasoningTokens, usd
+        case outputTokens, reasoningTokens, webSearches, usd
     }
 
     init() {}
@@ -141,6 +187,7 @@ struct CostBuckets: Codable, Equatable {
         cacheReadTokens = try container.decodeIfPresent(Int.self, forKey: .cacheReadTokens) ?? 0
         outputTokens = try container.decodeIfPresent(Int.self, forKey: .outputTokens) ?? 0
         reasoningTokens = try container.decodeIfPresent(Int.self, forKey: .reasoningTokens) ?? 0
+        webSearches = try container.decodeIfPresent(Int.self, forKey: .webSearches) ?? 0
         usd = try container.decodeIfPresent(Double.self, forKey: .usd) ?? 0
     }
 }
@@ -153,8 +200,13 @@ extension WorkspaceEvent: Decodable {
         case toolCallId, name, args, result, isError
         case approvalId, decision, irreversible, payload
         case strategy, beforeMessages, afterMessages, beforeTokens, afterTokens
+        case cost
         case from, to, atCompactionBoundary
         case run, session, path, op
+        case model
+        case stepNumber, activeTools, toolCalls, durationMs, finishReason
+        case subagentId, task, stoppedBy, reportChars
+        case url, title
     }
 
     init(from decoder: Decoder) throws {
@@ -236,7 +288,43 @@ extension WorkspaceEvent: Decodable {
         case "cost.updated":
             self = .costUpdated(
                 run: try container.decode(CostBuckets.self, forKey: .run),
-                session: try container.decode(CostBuckets.self, forKey: .session)
+                session: try container.decode(CostBuckets.self, forKey: .session),
+                delta: try container.decodeIfPresent(CostBuckets.self, forKey: .delta) ?? CostBuckets(),
+                model: try container.decodeIfPresent(String.self, forKey: .model) ?? ""
+            )
+
+        case "step.started":
+            self = .stepStarted(
+                stepNumber: try container.decode(Int.self, forKey: .stepNumber),
+                activeTools: try container.decodeIfPresent([String].self, forKey: .activeTools)
+            )
+        case "step.finished":
+            self = .stepFinished(StepReport(
+                stepNumber: try container.decode(Int.self, forKey: .stepNumber),
+                cost: try container.decodeIfPresent(CostBuckets.self, forKey: .cost) ?? CostBuckets(),
+                toolCalls: try container.decodeIfPresent(Int.self, forKey: .toolCalls) ?? 0,
+                durationMs: try container.decodeIfPresent(Double.self, forKey: .durationMs),
+                finishReason: try container.decodeIfPresent(String.self, forKey: .finishReason)
+            ))
+
+        case "subagent.started":
+            self = .subagentStarted(
+                subagentId: try container.decode(String.self, forKey: .subagentId),
+                task: try container.decode(String.self, forKey: .task)
+            )
+        case "subagent.finished":
+            self = .subagentFinished(SubagentReport(
+                subagentId: try container.decode(String.self, forKey: .subagentId),
+                cost: try container.decodeIfPresent(CostBuckets.self, forKey: .cost) ?? CostBuckets(),
+                stoppedBy: try container.decodeIfPresent(SubagentReport.StoppedBy.self, forKey: .stoppedBy) ?? .complete,
+                reportChars: try container.decodeIfPresent(Int.self, forKey: .reportChars) ?? 0
+            ))
+
+        case "source.cited":
+            self = .sourceCited(
+                messageId: try container.decode(String.self, forKey: .messageId),
+                url: try container.decode(String.self, forKey: .url),
+                title: try container.decode(String.self, forKey: .title)
             )
         case "workspace.file.changed":
             self = .fileChanged(

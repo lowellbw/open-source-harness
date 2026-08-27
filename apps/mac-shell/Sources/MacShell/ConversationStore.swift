@@ -22,11 +22,54 @@ struct Turn: Identifiable, Equatable, Codable {
     var text: String = ""
     var reasoning: String = ""
     var tools: [ToolInvocation] = []
+    var steps: [StepRow] = []
+    var subagents: [SubagentRow] = []
+    /// Pages the model cited, deduped by URL — one page cited for three separate
+    /// claims should not produce three identical chips.
+    var sources: [Citation] = []
     var isStreaming: Bool = false
     var symbol: String? = nil
 
     var isEmpty: Bool {
         text.isEmpty && reasoning.isEmpty && tools.isEmpty
+            && steps.isEmpty && subagents.isEmpty && sources.isEmpty
+    }
+}
+
+/// One model request inside a turn.
+struct StepRow: Identifiable, Equatable, Codable {
+    let number: Int
+    var toolCalls: Int = 0
+    var offered: Int?
+    var durationMs: Double?
+    var usd: Double = 0
+    var finished: Bool = false
+
+    var id: Int { number }
+}
+
+struct SubagentRow: Identifiable, Equatable, Codable {
+    let id: String
+    let task: String
+    var usd: Double = 0
+    var reportChars: Int = 0
+    var stoppedBy: String?
+
+    var finished: Bool { stoppedBy != nil }
+    var failed: Bool { stoppedBy != nil && stoppedBy != "complete" }
+}
+
+struct Citation: Identifiable, Equatable, Codable {
+    let url: String
+    let title: String
+
+    var id: String { url }
+
+    /// What the chip shows when the page had no title.
+    var displayName: String {
+        if !title.isEmpty { return title }
+        guard let host = URL(string: url)?.host else { return url }
+        return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
     }
 }
 
@@ -308,7 +351,9 @@ final class ConversationStore: ObservableObject {
             if let placeholder = boundAssistantTurn, let index = index(of: placeholder) {
                 var turn = turns[index]
                 turn = Turn(id: messageId, role: .assistant, text: turn.text,
-                            reasoning: turn.reasoning, tools: turn.tools, isStreaming: true)
+                            reasoning: turn.reasoning, tools: turn.tools,
+                            steps: turn.steps, subagents: turn.subagents,
+                            sources: turn.sources, isStreaming: true)
                 turns[index] = turn
                 boundAssistantTurn = messageId
             }
@@ -346,6 +391,43 @@ final class ConversationStore: ObservableObject {
         case .approvalResolved:
             pendingApproval = nil
 
+        case .stepStarted(let number, let activeTools):
+            appendToAssistant(nil) { turn in
+                guard !turn.steps.contains(where: { $0.number == number }) else { return }
+                turn.steps.append(StepRow(number: number, offered: activeTools?.count))
+            }
+
+        case .stepFinished(let report):
+            appendToAssistant(nil) { turn in
+                guard let index = turn.steps.firstIndex(where: { $0.number == report.stepNumber })
+                else { return }
+                turn.steps[index].toolCalls = report.toolCalls
+                turn.steps[index].durationMs = report.durationMs
+                turn.steps[index].usd = report.cost.usd
+                turn.steps[index].finished = true
+            }
+
+        case .subagentStarted(let id, let task):
+            appendToAssistant(nil) { turn in
+                guard !turn.subagents.contains(where: { $0.id == id }) else { return }
+                turn.subagents.append(SubagentRow(id: id, task: task))
+            }
+
+        case .subagentFinished(let report):
+            appendToAssistant(nil) { turn in
+                guard let index = turn.subagents.firstIndex(where: { $0.id == report.subagentId })
+                else { return }
+                turn.subagents[index].usd = report.cost.usd
+                turn.subagents[index].reportChars = report.reportChars
+                turn.subagents[index].stoppedBy = report.stoppedBy.rawValue
+            }
+
+        case .sourceCited(let messageId, let url, let title):
+            appendToAssistant(messageId) { turn in
+                guard !turn.sources.contains(where: { $0.url == url }) else { return }
+                turn.sources.append(Citation(url: url, title: title))
+            }
+
         case .contextCompacted(let compaction):
             let before = Self.tokens.string(from: NSNumber(value: compaction.beforeTokens)) ?? "\(compaction.beforeTokens)"
             let after = Self.tokens.string(from: NSNumber(value: compaction.afterTokens)) ?? "\(compaction.afterTokens)"
@@ -364,7 +446,7 @@ final class ConversationStore: ObservableObject {
                 symbol: "arrow.triangle.swap"
             )
 
-        case .costUpdated(let run, let session):
+        case .costUpdated(let run, let session, _, _):
             runCost = run
             sessionCost = session
 
