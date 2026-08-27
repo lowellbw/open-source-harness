@@ -58,3 +58,41 @@ because they are the ones that quietly decay over a long context.
 - pnpm workspaces, Node 22+, ESM.
 - `packages/protocol` depends on nothing else in the repo. Everything speaks to it.
 - Playwright uses the pre-installed Chromium at `/opt/pw-browsers`. Never run `playwright install`.
+
+## Who works where
+
+Two agents work in this repository at the same time. The split below is not an
+aspiration — it is what has actually happened. As of `b240575`, **no single file had
+been touched by both**: one side's 29 changed files were all under `apps/mac-shell/`,
+the other's 227 were all outside it.
+
+| Area | Owner | Covers |
+|---|---|---|
+| `apps/mac-shell/**` | **Mac UI** | SwiftUI views, the design system, window and menu chrome, Keychain, Seatbelt, sidecar supervision, notarization, the `.app` bundle |
+| everything else | **Backend** | `packages/*`, `apps/web`, `apps/sidecar`, the agent loop, tools, persistence, the gateway, MCP |
+
+Working rules:
+
+- **The Mac shell is presentation and platform integration only.** Product behaviour
+  belongs in `packages/session`, per the invariant above. If the Mac app needs a
+  behaviour the API does not expose, the fix is a backend change, not a Swift one —
+  otherwise §3's "one core, three shells" stops being true.
+
+- **Neither side edits the other's area.** Not because of merge conflicts — there have
+  been none — but because both sides then reason from a stale model of the other.
+
+- **`packages/protocol` is the seam, and it is owned by the backend.** When an event
+  type is added there, the Mac shell must grow a case for it or the feature is simply
+  invisible on macOS. This fails *silently*: `WorkspaceEvent.swift` decodes an unknown
+  `type` to `.unknown` and logs it, deliberately, so that a newer sidecar cannot take
+  the transcript down. So say so in the commit message when you add an event, and
+  treat "the Mac app has not caught up yet" as the expected state rather than a bug.
+  Same for `costBucketsSchema`: `CostBuckets` decodes leniently, so a new bucket is
+  ignored rather than rejected, and the meter quietly understates until Swift adds it.
+
+- **Duplicated work is the real risk here, not conflicts.** Both sides independently
+  implemented the `AGENTIC_SIDECAR_READY` contract from `SidecarLaunch.swift` — at
+  `apps/sidecar/server.mjs` and `apps/mac-shell/sidecar/server.js` — within about
+  twenty minutes of each other, and converged on the same token-to-cookie exchange.
+  Different paths, so git said nothing. Before building something that spans the seam,
+  check whether the other side has already built it.

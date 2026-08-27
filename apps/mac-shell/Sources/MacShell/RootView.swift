@@ -127,8 +127,16 @@ private struct WorkspaceView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .navigationTitle(services.sessions.selected?.title ?? "Workspace")
-        .navigationSubtitle(subtitle)
+        // Deliberately no `.navigationTitle` / `.navigationSubtitle`.
+        //
+        // The macOS title bar is a single strip across the whole window, and the
+        // document title is laid out after the leading toolbar items — which, with an
+        // `HSplitView`, puts it directly over the source list rather than over the
+        // content column. `NavigationSplitView` handles that placement; this does not,
+        // and it is not worth reintroducing that container for (see the comment above
+        // `WorkspaceView` for what it cost last time). The title lives in the
+        // conversation column instead, which is also where the reader is looking.
+        .navigationTitle("")
         .toolbar {
             WorkspaceToolbar(showSessions: $showSessions, showInspector: $showInspector)
         }
@@ -154,6 +162,10 @@ private struct WorkspaceView: View {
 
     private var conversationColumn: some View {
         VStack(spacing: 0) {
+            ConversationHeader(
+                title: services.sessions.selected?.title ?? "New Conversation",
+                subtitle: subtitle
+            )
             if conversation.isArchived {
                 InlineBanner(
                     tone: .info,
@@ -234,6 +246,38 @@ private struct WorkspaceToolbar: ToolbarContent {
             }
             .help("Show or hide the workspace files and connectors")
         }
+    }
+}
+
+/// The conversation's title and running cost, at the top of the column they describe.
+private struct ConversationHeader: View {
+    let title: String
+    let subtitle: String
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: Space.s) {
+            Text(title)
+                .font(Typo.bodyBold)
+                .foregroundStyle(.dsText)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer(minLength: Space.m)
+            Text(subtitle)
+                .font(Typo.micro)
+                .foregroundStyle(.dsMuted)
+                .monospacedDigit()
+                .lineLimit(1)
+                .fixedSize()
+        }
+        .padding(.horizontal, Space.l)
+        .padding(.vertical, Space.s)
+        .frame(maxWidth: .infinity)
+        .chromeSurface()
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(.dsBorder).frame(height: Metric.hairline)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(title). \(subtitle)")
     }
 }
 

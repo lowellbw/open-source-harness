@@ -23,6 +23,12 @@ struct SessionListView: View {
             }
         }
         .listStyle(.sidebar)
+        // Opaque. The vibrancy a `.sidebar` list brings blends with the desktop
+        // behind the window, so the pane picked up whatever colour the wallpaper
+        // happened to be — a warm one turned it cream — and shifted as the window
+        // moved. Translucency belongs on floating chrome, not on a pane.
+        .scrollContentBackground(.hidden)
+        .background(.dsSidebar)
         .layoutProbe("sessions")
         // A field in the sidebar rather than `.searchable`.
         //
@@ -55,7 +61,7 @@ struct SessionListView: View {
             .overlay(Radius.shape(Radius.small).strokeBorder(Color.dsBorder))
             .padding(.horizontal, Space.m)
             .padding(.vertical, Space.s)
-            .chromeSurface()
+            .background(.dsSidebar)
         }
         .overlay {
             if library.sessions.isEmpty {
@@ -84,7 +90,7 @@ struct SessionListView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .chromeSurface()
+            .background(.dsSidebar)
             .overlay(alignment: .top) {
                 Rectangle().fill(.dsBorder).frame(height: Metric.hairline)
             }
@@ -117,10 +123,13 @@ struct SessionListView: View {
             VStack(alignment: .leading, spacing: Space.hair) {
                 Text(session.title)
                     .font(Typo.body)
-                    // Explicit, not inherited. A `.sidebar` list is vibrant, and
-                    // vibrancy desaturates unemphasised label colours — the row
-                    // titles came out as pale grey against a pale material.
-                    .foregroundStyle(.dsText)
+                    // Deliberately NOT a token. macOS inverts `.primary` and
+                    // `.secondary` automatically when a list row is selected; a
+                    // hardcoded colour does not, so on the selection highlight the
+                    // metadata line came out dark grey on saturated blue and was
+                    // unreadable. This is the one place the system hierarchy has to
+                    // win over the palette.
+                    .foregroundStyle(.primary)
                     .lineLimit(1)
                     .truncationMode(.tail)
 
@@ -143,7 +152,7 @@ struct SessionListView: View {
                     }
                 }
                 .font(Typo.micro)
-                .foregroundStyle(.dsMuted)
+                .foregroundStyle(.secondary)
                 .lineLimit(1)
             }
             .padding(.vertical, Space.hair)

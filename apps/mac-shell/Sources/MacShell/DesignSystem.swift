@@ -112,6 +112,14 @@ enum Palette {
     // Mac-only additions. The web has one canvas; this window has three panes that
     // have to read apart. Derived from `bg`, never invented, and deliberately few.
 
+    /// The conversations source list.
+    ///
+    /// Opaque, not vibrant. A `.sidebar` list installs an `NSVisualEffectView` with
+    /// behind-window blending, which samples the desktop — so on a warm wallpaper the
+    /// pane came out visibly cream, and it changed colour as the window moved. A
+    /// source list should be a stable surface, not a mood ring.
+    static let sidebar = ColorToken("ds.sidebar", light: 0xF3F3F6, dark: 0x171719)
+
     /// The inspector, and any pane that is not the document.
     static let inspector = ColorToken("ds.inspector", light: 0xF3F3F6, dark: 0x171719)
     /// Behind inline code and payload dumps.
@@ -128,6 +136,7 @@ extension ShapeStyle where Self == Color {
     static var dsCanvas: Color { Palette.bg.color }
     static var dsSurface: Color { Palette.surface.color }
     static var dsInspector: Color { Palette.inspector.color }
+    static var dsSidebar: Color { Palette.sidebar.color }
     static var dsBorder: Color { Palette.border.color }
     static var dsText: Color { Palette.text.color }
     static var dsMuted: Color { Palette.muted.color }

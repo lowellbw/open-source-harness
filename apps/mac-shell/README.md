@@ -14,6 +14,18 @@ in the comments next to them.
 
 ---
 
+## Scope
+
+This directory is the **Mac UI**. Another agent owns everything outside it —
+`packages/*`, `apps/web`, `apps/sidecar`, the agent loop, tools and persistence. See
+"Who works where" in the repository's `CLAUDE.md`.
+
+Practically: presentation and platform integration live here; product behaviour lives
+in `packages/session` and is reached over the sidecar's `/api` surface. When
+`packages/protocol` grows an event, this app has to grow a case for it — unknown
+events decode to `.unknown` and are logged rather than rendered, so a missing case is
+invisible rather than loud.
+
 ## What it is
 
 A native shell around the web workspace (§8 of `docs/strategy/PLAN-V2.md`):
