@@ -36,3 +36,11 @@ export {
   CHECKPOINT_DIR,
   type Checkpoint,
 } from './checkpoints.js'
+export { buildImageTools, DEFAULT_IMAGE_MODEL, type ImageToolOptions } from './tools-image.js'
+export {
+  buildDocumentTools,
+  makeSubagentJudge,
+  SPEC_EXAMPLES,
+  SPEC_SCHEMAS,
+  type DocumentToolOptions,
+} from './tools-documents.js'

@@ -60,6 +60,15 @@ because they are the ones that quietly decay over a long context.
 - **Org policy, permissions and scope re-inject every turn** — pinned outside compactable
   history, never stated only at session start. Compaction otherwise decays constraint
   adherence to measurable violation rates. (§9)
+- **The document gates need LibreOffice's FILTERS, not just its binary.** A base image can carry
+  `libreoffice-core` and `libreoffice-common` with no `-writer`, `-impress` or `-calc`, and then
+  `soffice` exists, exits 0, and converts nothing — every attempt reports "source file could not
+  be loaded", including for a plain `.txt`. Gates 2 and 3 skip loudly when it is missing rather
+  than passing quietly. Multi-page rendering also needs `poppler-utils`; without it only page one
+  is rendered and `RenderResult.via` says `'libreoffice'` so a caller knows.
+- **A gate that cannot run reports failure, never success.** No judge, no rasteriser, no reviewer
+  — all of them fail the document. A verification step that passes when it could not check is how
+  verification quietly stops happening.
 - **`apps/mac-shell` cannot be built or tested on Linux.** Seatbelt, TCC/PPPC, Keychain,
   FSEvents+`clonefile` and notarization need a Mac runner. Do not attempt them in CI here.
 

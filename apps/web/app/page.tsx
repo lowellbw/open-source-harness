@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Message, WorkspaceEvent } from '@workspace/protocol'
 import { FilePanel } from '@/components/FilePanel'
 import { ThreadList } from '@/components/ThreadList'
+import { ArtifactPane, kindOf } from '@/components/ArtifactPane'
 import { Thread, type Turn } from '@/components/Thread'
 import { Composer } from '@/components/Composer'
 import { TopBar, type Effort, type ModelInfo } from '@/components/TopBar'
@@ -23,6 +24,8 @@ export default function Page() {
   const [busy, setBusy] = useState(false)
   const [filesVersion, setFilesVersion] = useState(0)
   const [error, setError] = useState<string | null>(null)
+  const [latestFile, setLatestFile] = useState<string | null>(null)
+  const [paneOpen, setPaneOpen] = useState(false)
 
   const refreshModels = useCallback(async () => {
     if (!threadId) return
@@ -237,6 +240,12 @@ export default function Page() {
 
       case 'workspace.file.changed':
         setFilesVersion((v) => v + 1)
+        // Opening the pane on the first previewable thing the agent makes is
+        // the difference between "it wrote a deck somewhere" and seeing it.
+        if (event.op !== 'deleted' && kindOf(event.path) !== 'unsupported') {
+          setLatestFile(event.path)
+          setPaneOpen(true)
+        }
         break
     }
   }, [])
@@ -344,6 +353,19 @@ export default function Page() {
           )}
           <Composer onSend={send} disabled={busy} />
         </main>
+
+        {paneOpen && threadId && (
+          <aside
+            className="hidden w-[26rem] shrink-0 border-l xl:flex xl:flex-col"
+            style={{ borderColor: 'var(--border)' }}
+          >
+            <ArtifactPane
+              sessionId={threadId}
+              latest={latestFile}
+              onClose={() => setPaneOpen(false)}
+            />
+          </aside>
+        )}
       </div>
 
       {approval && <ApprovalPrompt approval={approval} onResolve={resolveApproval} />}

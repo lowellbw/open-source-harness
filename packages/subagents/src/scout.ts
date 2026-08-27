@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { ToolSet } from 'ai'
 import { Agent, type OrgPolicy } from '@workspace/core'
 import { ModelGateway } from '@workspace/gateway-model'
-import type { CostBuckets, WorkspaceEvent } from '@workspace/protocol'
+import type { CostBuckets, FilePart, WorkspaceEvent } from '@workspace/protocol'
 import { addCost, zeroCost } from '@workspace/protocol'
 import type { Workspace } from '@workspace/workspace'
 import { readOnly } from './readonly.js'
@@ -55,6 +55,14 @@ export interface ScoutOptions {
    * a runtime check on an arbitrary tool is not possible anyway.
    */
   extraTools?: ToolSet
+  /**
+   * Images or documents the scout should look at.
+   *
+   * What makes gate 3 possible: a fresh subagent handed a rendered page and
+   * asked whether it matches the request. Read through the read-only workspace,
+   * so an attachment is one more thing the scout can see and not touch.
+   */
+  attachments?: FilePart[]
   /** Parent run, for nesting in the trace. */
   parentRunId: string
   onEvent?: (event: WorkspaceEvent) => void
@@ -117,6 +125,7 @@ export async function spawnScout(options: ScoutOptions): Promise<ScoutResult> {
     role: options.policy.role,
     contextMaxTokens: options.contextMaxTokens ?? 40_000,
     maxSteps: options.maxSteps ?? 8,
+    readAttachment: (path) => scoutWorkspace.readBytes(path),
     tools: () => ({
       ...buildScoutFileTools({ workspace: scoutWorkspace }),
       ...(options.extraTools ?? {}),
@@ -127,7 +136,9 @@ export async function spawnScout(options: ScoutOptions): Promise<ScoutResult> {
     // exists to avoid, moved from the model to the reader.
   })
 
-  const turn = await agent.send(options.task)
+  const turn = await agent.send(options.task, {
+    ...(options.attachments ? { attachments: options.attachments } : {}),
+  })
   const cost = gateway.totals().session
 
   const result: ScoutResult = {

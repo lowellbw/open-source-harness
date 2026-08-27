@@ -1,6 +1,6 @@
 import { streamText, stepCountIs, type ToolSet } from 'ai'
 import { randomUUID } from 'node:crypto'
-import type { Message, WorkspaceEvent } from '@workspace/protocol'
+import type { FilePart, Message, WorkspaceEvent } from '@workspace/protocol'
 import {
   ModelGateway,
   prepareForProvider,
@@ -10,7 +10,13 @@ import {
 } from '@workspace/gateway-model'
 import { condense, defaultCondenserOptions } from './condenser.js'
 import { PolicyPin, type OrgPolicy } from './pinning.js'
-import { fromModelMessages, toInstructions, toModelMessages } from './adapter.js'
+import {
+  fromModelMessages,
+  resolveAttachments,
+  toInstructions,
+  toModelMessages,
+  type ReadAttachment,
+} from './adapter.js'
 
 /**
  * The agent loop.
@@ -82,6 +88,15 @@ export interface AgentConfig {
    * made it crash.
    */
   onMessage?: (message: Message) => void
+  /**
+   * Reads an attachment's bytes at request time.
+   *
+   * History stores a path, never bytes: a base64 image inline would be
+   * re-serialised into SQLite and re-counted by the condenser every single
+   * turn. Without this, an attachment degrades to a note saying it is
+   * unavailable rather than failing the turn.
+   */
+  readAttachment?: ReadAttachment
 }
 
 export type ReasoningEffort = 'low' | 'medium' | 'high'
@@ -148,7 +163,10 @@ export class Agent {
     })
   }
 
-  async send(userText: string): Promise<TurnResult> {
+  async send(
+    userText: string,
+    options: { attachments?: FilePart[] } = {},
+  ): Promise<TurnResult> {
     const runId = randomUUID()
     this.config.gateway.startRun()
 
@@ -156,7 +174,10 @@ export class Agent {
       id: randomUUID(),
       role: 'user',
       pinned: false,
-      parts: [{ type: 'text', text: userText }],
+      parts: [
+        { type: 'text', text: userText },
+        ...(options.attachments ?? []),
+      ],
     }
     this.history.push(userMessage)
     this.config.onMessage?.(userMessage)
@@ -205,7 +226,11 @@ export class Agent {
         tools: { ...resolveTools(this.config.tools), ...resolved.providerTools },
         stopWhen: stepCountIs(this.config.maxSteps ?? 12),
         instructions: toInstructions(this.pin.messages()),
-        messages: toModelMessages(this.history),
+        messages: toModelMessages(
+          this.config.readAttachment
+            ? await resolveAttachments(this.history, this.config.readAttachment)
+            : this.history,
+        ),
 
         // Only where the model actually honours it. `supportsReasoningEffort`
         // comes from the provider's own parameter list, not from a guess.

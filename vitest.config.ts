@@ -17,6 +17,7 @@ export default defineConfig({
       '@workspace/session': src('session'),
       '@workspace/store': src('store'),
       '@workspace/subagents': src('subagents'),
+      '@workspace/documents': src('documents'),
     },
   },
   test: {

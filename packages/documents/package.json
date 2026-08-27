@@ -1,5 +1,5 @@
 {
-  "name": "@workspace/session",
+  "name": "@workspace/documents",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -16,15 +16,11 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@workspace/core": "workspace:*",
-    "@workspace/documents": "workspace:*",
-    "@workspace/gateway-model": "workspace:*",
-    "@workspace/mcp": "workspace:*",
     "@workspace/protocol": "workspace:*",
-    "@workspace/store": "workspace:*",
-    "@workspace/subagents": "workspace:*",
     "@workspace/workspace": "workspace:*",
-    "ai": "^7.0.79",
+    "docx": "^9.7.1",
+    "exceljs": "^4.4.0",
+    "pptxgenjs": "^4.0.1",
     "zod": "^3.25.76"
   }
 }

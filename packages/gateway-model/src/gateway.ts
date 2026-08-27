@@ -1,5 +1,5 @@
 import { createOpenRouter } from '@openrouter/ai-sdk-provider'
-import type { LanguageModel, LanguageModelUsage, ToolSet } from 'ai'
+import type { ImageModel, LanguageModel, LanguageModelUsage, ToolSet } from 'ai'
 import type { CostBuckets } from '@workspace/protocol'
 import { ModelCatalog, defaultCatalog, type ModelEntry } from './catalog.js'
 import { Meter, priceUsageReport } from './meter.js'
@@ -104,6 +104,18 @@ export class ModelGateway {
       vendor: vendorOf(entry.upstreamModel),
       providerTools: this.providerTools,
     }
+  }
+
+  /**
+   * An image model, routed through the same provider as everything else.
+   *
+   * On the gateway rather than reachable from a tool so image spend cannot
+   * bypass the meter. Not in the catalog because the catalog is about
+   * user-facing aliases and role gating for CHAT models; an image model is
+   * chosen by the tool, not by the person.
+   */
+  imageModel(modelId: string): ImageModel {
+    return this.openrouter.imageModel(modelId)
   }
 
   /** The always-available floor, for when a caller's choice is unavailable. */

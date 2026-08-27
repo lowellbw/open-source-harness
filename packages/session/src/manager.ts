@@ -10,6 +10,8 @@ import { buildWorkspaceTools } from './tools.js'
 import { buildSearchWebTools, searchProviderFromEnv, type SearchProvider } from './search.js'
 import { buildSubagentTools } from '@workspace/subagents'
 import { buildWebTools } from './tools-web.js'
+import { buildImageTools } from './tools-image.js'
+import { buildDocumentTools } from './tools-documents.js'
 import { initConnectors, type ConnectorConfig, type ConnectorState } from './connectors.js'
 
 /**
@@ -59,6 +61,12 @@ export interface SessionManagerConfig {
   /** Scouts read and summarise, which is not premium work. Defaults to Light. */
   scoutModelAlias?: string
   reasoningEffort?: ReasoningEffort
+  /** Set false to remove image generation. */
+  images?: boolean
+  /** Set false to remove document creation. */
+  documents?: boolean
+  /** Set false to write documents without running the three gates. */
+  verifyDocuments?: boolean
 }
 
 export interface Session {
@@ -177,6 +185,18 @@ export class SessionManager {
     const builtins = {
       ...buildWorkspaceTools({ workspace, approvals, emit }),
       ...(searchProvider ? buildSearchWebTools({ provider: searchProvider }) : {}),
+      ...(this.config.images === false
+        ? {}
+        : buildImageTools({ workspace, gateway, emit })),
+      ...(this.config.documents === false
+        ? {}
+        : buildDocumentTools({
+            workspace,
+            policy,
+            gateway,
+            emit,
+            ...(this.config.verifyDocuments === false ? { verify: false } : {}),
+          })),
       ...(this.config.subagents === false
         ? {}
         : buildSubagentTools({
@@ -204,6 +224,7 @@ export class SessionManager {
         modelAlias: alias,
         role: policy.role,
         initialHistory: history,
+        readAttachment: (attachmentPath) => workspace.readBytes(attachmentPath),
         ...(this.config.reasoningEffort ? { reasoningEffort: this.config.reasoningEffort } : {}),
         ...(store
           ? {

@@ -22,6 +22,16 @@ pnpm dev                              # http://localhost:3000
 Docker is optional. Without it everything still works — you lose only the container-backed
 workspace, and its conformance tests skip rather than fail.
 
+Documents need LibreOffice with its filters, and multi-page previews need poppler:
+
+```bash
+apt-get install -y libreoffice-writer libreoffice-impress libreoffice-calc poppler-utils
+```
+
+Beware a half-installed LibreOffice: `libreoffice-core` alone gives you an `soffice` that runs,
+exits 0, and converts nothing. The document gates skip loudly rather than passing quietly when it
+is absent.
+
 ## What works today
 
 - **Chat with streaming**, tool calls shown inline, reasoning collapsible.
@@ -46,6 +56,17 @@ workspace, and its conformance tests skip rather than fail.
   gets its own context and its own spend ceiling, and returns a short report written to a file
   rather than pasted back. They cannot write, run commands, use connectors, or spawn more of
   themselves — enforced by a workspace wrapper that refuses, not by asking the model nicely.
+- **Documents that are checked, not just produced.** Word, PowerPoint and Excel from a small
+  specification, then three gates before the tool returns: the package structure, whether an
+  office suite can open and re-save it, and whether a *fresh* subagent looking at the rendered
+  pages thinks it matches the request. That last one is the one everyone skips, and the only one
+  that catches a deck which is valid, recalculates, and has its third bullet running off the
+  bottom of the slide. Markdown takes the short path — it renders in the panel and needs no
+  conversion to be useful.
+- **An artifact panel** beside the conversation, showing whatever the agent last made: rendered
+  Markdown, images, agent-written pages in a sandboxed frame, and page images for Office files.
+- **Images in and out.** Generated through the same gateway as everything else, so image spend is
+  metered like any other; attached images and PDFs go to the model as real image and file parts.
 - **MCP connectors** with deferred tool loading, so a dozen connected servers do not put tens of
   thousands of tokens of schema in front of the model before it has done anything. Tools are not
   callable until you have read what they claim to do, and a tool whose description changes after
@@ -92,6 +113,7 @@ A full live pass costs well under a cent — it runs on the cheapest tier under 
 | `packages/session` | Session lifecycle, agent toolset, approval gate, connector bring-up. Shared by every shell. |
 | `packages/store` | SQLite persistence: threads, messages, cost ledger. |
 | `packages/subagents` | Read-only scouts: the workspace wrapper, their toolset, the spawn tool. |
+| `packages/documents` | docx/pptx/xlsx builders, LibreOffice rendering, the three verification gates. |
 | `packages/mcp` | MCP client, tool-description pinning, deferred loading. |
 | `apps/web` | The workspace you open. |
 | `apps/sidecar` | Node process the Mac shell launches. Serves the same app; token-gated loopback. |

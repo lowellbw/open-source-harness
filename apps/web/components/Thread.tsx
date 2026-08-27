@@ -312,7 +312,7 @@ function Collapsible({ label, body }: { label: string; body: string }) {
  * element rather than via a typography plugin, to stay inside the muted-border,
  * tight-rhythm look §7 asks for.
  */
-function Markdown({ text }: { text: string }) {
+export function Markdown({ text }: { text: string }) {
   return (
     <div className="text-[14px] leading-relaxed">
       <ReactMarkdown
