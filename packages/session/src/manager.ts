@@ -12,6 +12,8 @@ import { buildSubagentTools } from '@workspace/subagents'
 import { buildWebTools } from './tools-web.js'
 import { buildImageTools } from './tools-image.js'
 import { buildDocumentTools } from './tools-documents.js'
+import { buildPythonTools } from './tools-python.js'
+import { buildSkillTools, loadSkills, skillInstructions, type ParsedSkill, type SkillLoadError } from '@workspace/skills'
 import { initConnectors, type ConnectorConfig, type ConnectorState } from './connectors.js'
 
 /**
@@ -67,6 +69,16 @@ export interface SessionManagerConfig {
   documents?: boolean
   /** Set false to write documents without running the three gates. */
   verifyDocuments?: boolean
+  /**
+   * Directory of installed skills.
+   *
+   * Curated and administrator-controlled (§11). A skill is instructions that
+   * go into the model's context and are followed, so where it comes from is
+   * the whole of its trust story.
+   */
+  skillsPath?: string
+  /** Set false to remove Python execution. */
+  python?: boolean
 }
 
 export interface Session {
@@ -98,6 +110,9 @@ export class SessionManager {
   private readonly sessions = new Map<string, Session>()
   private connectors: ConnectorState | undefined
   private connectorsPromise: Promise<ConnectorState> | undefined
+  private skills: ParsedSkill[] = []
+  private skillErrors: SkillLoadError[] = []
+  private skillsPromise: Promise<void> | undefined
 
   constructor(private readonly config: SessionManagerConfig) {}
 
@@ -115,6 +130,36 @@ export class SessionManager {
       return state
     })
     return this.connectorsPromise
+  }
+
+  /**
+   * Skills are read once per process, not per session.
+   *
+   * They are files an administrator installed, not per-conversation state, and
+   * re-reading a directory on every new thread is work for nothing.
+   */
+  private async getSkills(): Promise<ParsedSkill[]> {
+    if (!this.config.skillsPath) return []
+    this.skillsPromise ??= loadSkills(this.config.skillsPath).then((result) => {
+      this.skills = result.skills
+      this.skillErrors = result.errors
+      for (const error of result.errors) {
+        // Loud, because a skill that silently fails to load is a behaviour
+        // change nobody ordered.
+        console.warn(`[skills] ${error.path}: ${error.reason}`)
+      }
+    })
+    await this.skillsPromise
+    return this.skills
+  }
+
+  /** Malformed skills, for the UI to show rather than bury in a log. */
+  skillLoadErrors(): SkillLoadError[] {
+    return this.skillErrors
+  }
+
+  listSkills(): ParsedSkill[] {
+    return this.skills
   }
 
   async get(id: string, modelAlias?: string): Promise<Session> {
@@ -160,6 +205,7 @@ export class SessionManager {
           : { webSearch: { maxResults: 5, engine: 'auto' } },
       )
     const connectors = await this.getConnectors()
+    const skills = await this.getSkills()
 
     const listeners = new Set<(event: WorkspaceEvent) => void>()
     const emit = (event: WorkspaceEvent) => {
@@ -182,9 +228,15 @@ export class SessionManager {
       ...(searchProvider ? buildSearchWebTools({ provider: searchProvider }) : {}),
     }
 
-    const builtins = {
+    // Built in two halves because the skill tool needs to know what the other
+    // tools are, and a single object literal that references itself does not
+    // type — nor, more usefully, does it mean anything.
+    const coreTools = {
       ...buildWorkspaceTools({ workspace, approvals, emit }),
       ...(searchProvider ? buildSearchWebTools({ provider: searchProvider }) : {}),
+      ...(this.config.python === false
+        ? {}
+        : buildPythonTools({ workspace, approvals, emit })),
       ...(this.config.images === false
         ? {}
         : buildImageTools({ workspace, gateway, emit })),
@@ -209,6 +261,17 @@ export class SessionManager {
           })),
     }
 
+    const builtins: typeof coreTools = {
+      ...coreTools,
+      ...buildSkillTools({
+        skills,
+        // What a skill may declare in `requires`. Checked when the skill is
+        // opened rather than at load, so a skill is still listed — and still
+        // readable — on a machine where one of its tools is switched off.
+        availableTools: () => Object.keys(coreTools),
+      }),
+    }
+
     const session: Session = {
       id,
       gateway,
@@ -224,6 +287,9 @@ export class SessionManager {
         modelAlias: alias,
         role: policy.role,
         initialHistory: history,
+        // Re-read every step, like the policy, because anything stated once at
+        // the start of a conversation does not survive compaction.
+        extraInstructions: () => skillInstructions(skills),
         readAttachment: (attachmentPath) => workspace.readBytes(attachmentPath),
         ...(this.config.reasoningEffort ? { reasoningEffort: this.config.reasoningEffort } : {}),
         ...(store

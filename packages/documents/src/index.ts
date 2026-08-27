@@ -1,4 +1,12 @@
-export { toPdf, toImages, isRenderable, type RenderOptions, type RenderResult } from './render.js'
+export {
+  toPdf,
+  toImages,
+  isRenderable,
+  resolveOffice,
+  clearOfficeCache,
+  type RenderOptions,
+  type RenderResult,
+} from './render.js'
 export {
   buildDocx,
   buildPptx,

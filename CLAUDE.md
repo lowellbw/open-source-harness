@@ -51,6 +51,11 @@ because they are the ones that quietly decay over a long context.
   approval gate and connector bring-up are shared code: the Mac sidecar and the web app run
   the same implementation. Putting product behaviour in `apps/*` makes §3's "one core, three
   shells" untrue and guarantees the shells drift.
+- **A shell and Python see a real `/`; the file tools do not.** `runPython` runs with the
+  workspace as cwd, so relative paths land in it and `plt.savefig("/chart.png")` writes to the
+  root of the machine. The tool says so in its description and warns when a script exits clean
+  having created nothing the workspace can see. Do not try to "fix" this by rewriting paths —
+  it would break every legitimate absolute path.
 - **Budgets, quotas and model gating are enforced at the gateway, never only in the UI.**
   Assume the UI is bypassed. (§4)
 - **Never share a sandbox across orgs.** Per-org pools, ephemeral per-user within an org,
@@ -77,6 +82,11 @@ because they are the ones that quietly decay over a long context.
 - **A gate that cannot run reports failure, never success.** No judge, no rasteriser, no reviewer
   — all of them fail the document. A verification step that passes when it could not check is how
   verification quietly stops happening.
+- **The sidecar is the seam between the shell's vocabulary and the app's.** SidecarLaunch.swift
+  sets `AGENTIC_PROVIDER_API_KEY`, `AGENTIC_DATA_DIR` and `AGENTIC_SEARCH_API_KEY`; the app reads
+  `OPENROUTER_API_KEY`, `AGENTIC_WORKSPACE_HOME` and `BRAVE_API_KEY`. `bridgeEnvironment()` maps
+  them BEFORE `next()` is constructed, because the app reads them at module scope. Do not
+  "simplify" this by renaming either side — both are published contracts.
 - **`apps/mac-shell` cannot be built or tested on Linux.** Seatbelt, TCC/PPPC, Keychain,
   FSEvents+`clonefile` and notarization need a Mac runner. Do not attempt them in CI here.
 

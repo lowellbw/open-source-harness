@@ -44,3 +44,4 @@ export {
   SPEC_SCHEMAS,
   type DocumentToolOptions,
 } from './tools-documents.js'
+export { buildPythonTools, PYTHON_SCOPE, type PythonToolOptions } from './tools-python.js'

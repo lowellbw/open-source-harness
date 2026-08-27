@@ -8,7 +8,7 @@ import { ArtifactPane, kindOf } from '@/components/ArtifactPane'
 import { Thread, type Turn } from '@/components/Thread'
 import { Composer } from '@/components/Composer'
 import { TopBar, type Effort, type ModelInfo } from '@/components/TopBar'
-import { ApprovalPrompt, type Approval } from '@/components/ApprovalPrompt'
+import { ApprovalPrompt, type Approval, type ApprovalDecision } from '@/components/ApprovalPrompt'
 import { ConnectorPanel } from '@/components/ConnectorPanel'
 
 export default function Page() {
@@ -128,6 +128,7 @@ export default function Page() {
           reason: event.reason,
           payload: event.payload,
           irreversible: event.irreversible,
+          ...(event.scope ? { scope: event.scope } : {}),
         })
         setStatus('awaiting_approval')
         break
@@ -300,7 +301,7 @@ export default function Page() {
     [applyEvent, current, effort, refreshModels, threadId],
   )
 
-  const resolveApproval = useCallback(async (approvalId: string, decision: 'allow' | 'deny') => {
+  const resolveApproval = useCallback(async (approvalId: string, decision: ApprovalDecision) => {
     await fetch('/api/approve', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

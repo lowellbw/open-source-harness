@@ -1,8 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import fs from 'node:fs'
+import { existsSync } from 'node:fs'
 
 /**
  * Verifies the contract in `apps/mac-shell/Sources/MacShell/SidecarLaunch.swift`.
@@ -220,5 +221,74 @@ describe('sidecar test coverage', () => {
       )
     }
     expect(typeof built).toBe('boolean')
+  })
+})
+
+describe('the bridge between the shell and the application', () => {
+  const server = fileURLToPath(new URL('./server.mjs', import.meta.url))
+
+  /** Runs the sidecar with a given node binary and environment, briefly. */
+  function launch(node: string, env: Record<string, string>) {
+    return spawnSync(node, [server], {
+      env: { PATH: '/usr/bin:/bin', ...env },
+      encoding: 'utf8',
+      timeout: 20_000,
+      input: '',
+    })
+  }
+
+  const NODE_TOO_OLD = '/opt/node20/bin/node'
+  const hasOldNode = existsSync(NODE_TOO_OLD)
+  const withOldNode = hasOldNode ? it : it.skip
+
+  withOldNode('refuses to start on a Node without node:sqlite', () => {
+    /*
+     * `node:sqlite` landed in 22.3, and every thread, message and cost row
+     * goes through it. On anything older the sidecar used to start perfectly,
+     * announce itself, serve the UI, and then return 500 for the first thread
+     * anybody opened — the real error one line deep in stderr, and what the
+     * user saw was an app that did not work.
+     *
+     * This matters most on a Mac: /usr/local/bin/node is Homebrew's, and the
+     * shell resolves node from several candidate paths, so which one it finds
+     * depends on the machine.
+     */
+    const result = launch(NODE_TOO_OLD, { PORT: '0' })
+
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('too old')
+    expect(result.stderr).toContain('node:sqlite')
+    // Names the binary, because "install a newer node" is unhelpful when three
+    // are installed and the wrong one was picked.
+    expect(result.stderr).toContain(NODE_TOO_OLD)
+    // The ready line must NOT be printed — the shell waits on it.
+    expect(result.stdout).not.toContain('AGENTIC_SIDECAR_READY')
+  })
+
+  it('maps the shell’s variable names onto the ones the app reads', () => {
+    /*
+     * SidecarLaunch.swift and the web application were written against
+     * different vocabularies, and every mismatch fails quietly:
+     * AGENTIC_PROVIDER_API_KEY vs OPENROUTER_API_KEY refuses every turn, and
+     * AGENTIC_DATA_DIR vs AGENTIC_WORKSPACE_HOME sends writes to ~/ , which a
+     * sandboxed Mac app may not create.
+     */
+    const result = launch(process.execPath, {
+      PORT: '0',
+      AGENTIC_PROVIDER_API_KEY: 'test-key',
+      AGENTIC_DATA_DIR: '/tmp/mac-data',
+      AGENTIC_SEARCH_API_KEY: 'test-brave',
+      // Exit before serving; the mapping is logged during startup.
+      AGENTIC_WEB_DIR: '/nonexistent',
+    })
+
+    expect(result.stderr).toContain('mapped AGENTIC_PROVIDER_API_KEY -> OPENROUTER_API_KEY')
+    expect(result.stderr).toContain('mapped AGENTIC_DATA_DIR -> AGENTIC_WORKSPACE_HOME')
+    expect(result.stderr).toContain('mapped AGENTIC_SEARCH_API_KEY -> BRAVE_API_KEY')
+  })
+
+  it('warns at startup when there is no model key, rather than at the first turn', () => {
+    const result = launch(process.execPath, { PORT: '0', AGENTIC_WEB_DIR: '/nonexistent' })
+    expect(result.stderr).toContain('no model provider key')
   })
 })

@@ -7,7 +7,7 @@ export async function POST(req: Request) {
   const { sessionId, approvalId, decision } = (await req.json()) as {
     sessionId: string
     approvalId: string
-    decision: 'allow' | 'deny'
+    decision: 'allow' | 'deny' | 'session'
   }
 
   const session = peekSession(sessionId)

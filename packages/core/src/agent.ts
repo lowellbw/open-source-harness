@@ -97,6 +97,21 @@ export interface AgentConfig {
    * unavailable rather than failing the turn.
    */
   readAttachment?: ReadAttachment
+  /**
+   * Extra standing instructions, appended after the pinned policy.
+   *
+   * A function, and re-read on every step, for the same reason the policy is
+   * rebuilt from source: anything stated once at the start of a conversation
+   * is gone after compaction. It rides in `instructions` rather than in the
+   * message array, so it is structurally outside what compaction can touch.
+   *
+   * Deliberately separate from `policy.constraints`. Policy is a security
+   * mechanism with its own tests; a skill catalogue is a menu. Mixing a menu
+   * into the block that says what the agent may not do would make the block
+   * grow with every skill installed, and it is the block that must not be
+   * allowed to become long enough to skim.
+   */
+  extraInstructions?: () => string
 }
 
 export type ReasoningEffort = 'low' | 'medium' | 'high'
@@ -225,7 +240,7 @@ export class Agent {
         model: resolved.model,
         tools: { ...resolveTools(this.config.tools), ...resolved.providerTools },
         stopWhen: stepCountIs(this.config.maxSteps ?? 12),
-        instructions: toInstructions(this.pin.messages()),
+        instructions: withExtra(toInstructions(this.pin.messages()), this.config.extraInstructions),
         messages: toModelMessages(
           this.config.readAttachment
             ? await resolveAttachments(this.history, this.config.readAttachment)
@@ -290,10 +305,13 @@ export class Agent {
           return {
             // Rebuilt from source every step. History never holds the only
             // copy, so no compaction pass can lose it.
-            instructions: toInstructions(
-              this.pin.messages({
-                budgetRemainingUsd: this.config.gateway.budget.remaining().runUsd,
-              }),
+            instructions: withExtra(
+              toInstructions(
+                this.pin.messages({
+                  budgetRemainingUsd: this.config.gateway.budget.remaining().runUsd,
+                }),
+              ),
+              this.config.extraInstructions,
             ),
             messages: toModelMessages(forProvider.messages),
             ...(active ? { activeTools: [...active, ...providerToolNames] as never } : {}),
@@ -454,6 +472,12 @@ export class Agent {
   private emit(event: WorkspaceEvent): void {
     this.config.onEvent?.(event)
   }
+}
+
+/** Policy first, always. Anything else is appended, never interleaved. */
+function withExtra(instructions: string, extra: (() => string) | undefined): string {
+  const additional = extra?.().trim()
+  return additional ? `${instructions}\n\n${additional}` : instructions
 }
 
 function resolveTools(tools: AgentConfig['tools']): ToolSet {
