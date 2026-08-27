@@ -188,9 +188,26 @@ export const slideSchema = z.object({
 })
 
 export const pptxSpecSchema = z.object({
-  title: z.string(),
+  title: z.string().describe('Deck title, used as document metadata'),
   subtitle: z.string().optional(),
+  /**
+   * Every slide, in order, including a title slide if one is wanted.
+   *
+   * The builder adds NOTHING. An earlier version prepended a cover from
+   * `title`, which meant asking for three slides produced four — and the model
+   * could not express "no cover", so it fought the builder: nine attempts,
+   * each rejected by the reviewer for having a slide nobody asked for.
+   * Implicit content is very hard to drive.
+   */
   slides: z.array(slideSchema).min(1),
+  /**
+   * Adds a separate cover slide built from `title` and `subtitle`.
+   *
+   * Off by default, and it changes the slide COUNT — asking for three slides
+   * with this on produces four. Leave it off unless a title slide was
+   * specifically wanted.
+   */
+  coverSlide: z.boolean().default(false),
 })
 
 export type PptxSpec = z.infer<typeof pptxSpecSchema>
@@ -201,10 +218,12 @@ export async function buildPptx(workspace: Workspace, path: string, raw: unknown
   const deck = new Deck()
   deck.layout = 'LAYOUT_16x9'
 
-  const cover = deck.addSlide()
-  cover.addText(spec.title, { x: 0.6, y: 2.1, w: 8.8, h: 1.0, fontSize: 36, bold: true })
-  if (spec.subtitle) {
-    cover.addText(spec.subtitle, { x: 0.6, y: 3.1, w: 8.8, h: 0.6, fontSize: 18, color: '666666' })
+  if (spec.coverSlide) {
+    const cover = deck.addSlide()
+    cover.addText(spec.title, { x: 0.6, y: 2.1, w: 8.8, h: 1.0, fontSize: 36, bold: true })
+    if (spec.subtitle) {
+      cover.addText(spec.subtitle, { x: 0.6, y: 3.1, w: 8.8, h: 0.6, fontSize: 18, color: '666666' })
+    }
   }
 
   for (const entry of spec.slides) {

@@ -86,7 +86,7 @@ describe('building documents', () => {
     expect(cells).toBe(6)
   })
 
-  it('writes a pptx with a cover and one slide per entry', async () => {
+  it('writes exactly the slides asked for, adding none', async () => {
     const workspace = await makeWorkspace()
     await buildPptx(workspace, '/deck.pptx', {
       title: 'The Agentic Workspace',
@@ -98,9 +98,9 @@ describe('building documents', () => {
     })
 
     const listing = await workspace.exec('unzip -l ./deck.pptx', { timeoutMs: 20_000 })
-    // Cover plus two.
-    expect(listing.stdout).toContain('ppt/slides/slide3.xml')
-    expect(listing.stdout).not.toContain('ppt/slides/slide4.xml')
+    // Exactly the two slides asked for. Nothing added.
+    expect(listing.stdout).toContain('ppt/slides/slide2.xml')
+    expect(listing.stdout).not.toContain('ppt/slides/slide3.xml')
   })
 
   it('writes xlsx formulas without a fabricated cached result', async () => {
@@ -242,6 +242,7 @@ describe('rendering', () => {
     const workspace = await makeWorkspace()
     await buildPptx(workspace, '/three.pptx', {
       title: 'Cover',
+      coverSlide: true,
       slides: [
         { title: 'One', bullets: ['a'] },
         { title: 'Two', bullets: ['b'] },
@@ -252,7 +253,7 @@ describe('rendering', () => {
 
     expect(rendered.ok).toBe(true)
     if (rendered.via === 'poppler') {
-      // Cover plus two slides.
+      // Cover plus two slides, because the cover was asked for.
       expect(rendered.pages.length).toBe(3)
     } else {
       // LibreOffice's own PNG export does the first page only, and says so —
@@ -266,5 +267,44 @@ describe('rendering', () => {
     const workspace = await makeWorkspace()
     await workspace.write('/already.pdf', '%PDF-1.4 stub')
     expect(await toPdf(workspace, '/already.pdf')).toMatchObject({ ok: true, pdf: '/already.pdf' })
+  })
+})
+
+describe('stale renders', () => {
+  withOffice('does not leave pages from a previous version behind', { timeout: 240_000 }, async () => {
+    /*
+     * The bug this exists to stop: pdftoppm writes one file per page and
+     * overwrites in place, so a four-page render followed by a three-page one
+     * leaves page four on disk. Gate 3 then judges the corrected document
+     * against a page from the version before the correction — and can fail, or
+     * pass, for a reason that is no longer in the file.
+     */
+    const workspace = await makeWorkspace()
+
+    await buildPptx(workspace, '/deck.pptx', {
+      title: 'Four',
+      coverSlide: true,
+      slides: [
+        { title: 'One', bullets: ['a'] },
+        { title: 'Two', bullets: ['b'] },
+        { title: 'Three', bullets: ['c'] },
+      ],
+    })
+    const first = await toImages(workspace, '/deck.pptx')
+    if (first.via !== 'poppler') return // single-page fallback cannot show this
+
+    expect(first.pages.length).toBe(4)
+
+    // Same path, fewer slides — as happens when the model corrects itself.
+    await buildPptx(workspace, '/deck.pptx', {
+      title: 'Two',
+      slides: [
+        { title: 'One', bullets: ['a'] },
+        { title: 'Two', bullets: ['b'] },
+      ],
+    })
+    const second = await toImages(workspace, '/deck.pptx')
+
+    expect(second.pages.length).toBe(2)
   })
 })

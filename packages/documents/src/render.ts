@@ -60,6 +60,12 @@ export async function toPdf(
 
   await workspace.mkdir(outputDir).catch(() => {})
 
+  // Remove any previous conversion of this document. LibreOffice writes to a
+  // fixed name and would otherwise leave the old PDF in place if the new
+  // conversion failed — and the caller would then rasterise the old one and
+  // believe it had rendered the new.
+  await workspace.remove(`${outputDir}/${base}.pdf`).catch(() => {})
+
   // -env:UserInstallation gives each run its own profile directory. Without it
   // concurrent soffice invocations fight over a shared lock and one silently
   // produces nothing — which reads as "the document is broken".
@@ -112,6 +118,18 @@ export async function toImages(
   const outputDir = '/.render'
   const base = basename(converted.pdf).replace(/\.pdf$/i, '')
 
+  /*
+   * Clear the previous render of THIS document first.
+   *
+   * pdftoppm writes one file per page and overwrites in place, so rendering a
+   * four-page document and then a three-page one leaves page four behind. The
+   * consequence is not cosmetic: gate 3 judges whatever pages it is handed, so
+   * a corrected document would be reviewed against a page from the version
+   * before the correction — and could fail, or pass, for reasons that no longer
+   * exist in the file.
+   */
+  await clearPreviousPages(workspace, outputDir, `${base}-page`)
+
   const poppler = await workspace.exec('command -v pdftoppm', { timeoutMs: 10_000 })
   if (poppler.exitCode === 0) {
     await workspace.exec(
@@ -142,6 +160,15 @@ export async function toImages(
     pdf: converted.pdf,
     reason: `Could not rasterise. Install poppler-utils for multi-page rendering. ${fallback.stdout.slice(0, 300)}`,
   }
+}
+
+async function clearPreviousPages(
+  workspace: Workspace,
+  directory: string,
+  prefix: string,
+): Promise<void> {
+  const stale = await listMatching(workspace, directory, prefix)
+  await Promise.all(stale.map((page) => workspace.remove(page).catch(() => {})))
 }
 
 async function listMatching(

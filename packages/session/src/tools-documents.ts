@@ -78,88 +78,142 @@ export function buildDocumentTools(options: DocumentToolOptions): ToolSet {
       },
     }),
 
-    createDocument: tool({
-      description:
-        'Create a Word document, PowerPoint deck or Excel workbook and VERIFY it. The file is ' +
-        'checked three ways before this returns: the package structure, whether an office ' +
-        'suite can open and re-save it, and whether a fresh reviewer looking at the rendered ' +
-        'pages thinks it matches the request. If any check fails you get told what is wrong ' +
-        'and should fix it rather than reporting success.',
-      inputSchema: z.object({
-        path: z.string().describe('Workspace path ending in .docx, .pptx or .xlsx'),
-        /** Restated for the reviewer, who has not seen this conversation. */
-        request: z
-          .string()
-          .describe(
-            'What this document is meant to be, in one or two sentences. The reviewer has not ' +
-              'seen the conversation and judges the rendering against this alone.',
-          ),
-        spec: z.unknown().describe('The document specification. Shape depends on the extension.'),
-      }),
-      execute: async ({ path, request, spec }) => {
-        const kind = path.split('.').pop()?.toLowerCase()
+    createSlideDeck: makeDocumentTool({
+      ...options,
+      judge,
+      shouldVerify,
+      name: 'PowerPoint deck',
+      extension: 'pptx',
+      schema: pptxSpecSchema,
+      build: buildPptx,
+    }),
 
-        try {
-          if (kind === 'docx') await buildDocx(options.workspace, path, spec)
-          else if (kind === 'pptx') await buildPptx(options.workspace, path, spec)
-          else if (kind === 'xlsx') await buildXlsx(options.workspace, path, spec)
-          else {
-            return {
-              ok: false,
-              reason: `Unsupported extension "${kind}". Use .docx, .pptx or .xlsx, or writeMarkdown.`,
-            }
-          }
-        } catch (err) {
-          // A schema rejection is the most useful error the model gets, because
-          // it names the field. Passed through rather than summarised.
-          return { ok: false, stage: 'build', reason: describe(err) }
-        }
+    createWordDocument: makeDocumentTool({
+      ...options,
+      judge,
+      shouldVerify,
+      name: 'Word document',
+      extension: 'docx',
+      schema: docxSpecSchema,
+      build: buildDocx,
+    }),
 
-        options.emit({
-          type: 'workspace.file.changed',
-          runId: 'ui',
-          ts: Date.now(),
-          path,
-          op: 'created',
-        })
-
-        if (!shouldVerify) return { ok: true, path, verified: false }
-
-        const verdict = await verifyDocument(options.workspace, path, { request, judge })
-
-        return {
-          ok: verdict.ok,
-          path,
-          verified: true,
-          gates: verdict.gates.map((gate) => ({
-            gate: gate.gate,
-            passed: gate.passed,
-            detail: gate.detail,
-          })),
-          ...(verdict.ok
-            ? {}
-            : {
-                // Said explicitly, because the natural next move for a model
-                // holding a written file is to announce it.
-                note: 'The document was written but did not pass. Fix it and create it again; do not tell the user it is ready.',
-              }),
-        }
-      },
+    createSpreadsheet: makeDocumentTool({
+      ...options,
+      judge,
+      shouldVerify,
+      name: 'Excel workbook',
+      extension: 'xlsx',
+      schema: xlsxSpecSchema,
+      build: buildXlsx,
     }),
 
     documentSpecHelp: tool({
       description:
-        'Show a worked example of the specification createDocument expects for a given file ' +
-        'type. Call this before creating your first document of a type rather than guessing ' +
-        'at fields.',
+        'Show a worked example for a document type. The create tools already carry their full ' +
+        'schema, so this is only worth calling when an example would be clearer than the ' +
+        'field list — a table inside a slide, or formulas referencing other formulas.',
       inputSchema: z.object({ kind: z.enum(['docx', 'pptx', 'xlsx']) }),
-      // A filled-in example rather than a JSON Schema: a model copies the shape
-      // of an example correctly far more often than it infers one from a schema,
-      // and these are validated against the real schemas in the tests, so they
-      // cannot drift from what `createDocument` actually accepts.
       execute: async ({ kind }) => ({ kind, example: SPEC_EXAMPLES[kind] }),
     }),
   }
+}
+
+/**
+ * One tool per document type, each carrying its real schema.
+ *
+ * The first version of this was a single `createDocument` with
+ * `spec: z.unknown()` and a separate help tool describing the shape. It failed
+ * every time, and the way it failed is worth recording: given a parameter with
+ * no schema, the model serialised its object and sent a JSON STRING. The
+ * second attempt had exactly the right structure — as a string. Ten retries,
+ * no file written, the whole step budget gone.
+ *
+ * A parameter the model cannot see the shape of is a parameter it cannot fill
+ * in. The schema belongs in the tool definition, where the provider puts it in
+ * front of the model, not in a help tool it has to think to call.
+ *
+ * The string case is still handled, because a model that has been told the
+ * shape can still decide to send it as text, and failing on that would be
+ * pedantry at the user's expense.
+ */
+function makeDocumentTool<T>(config: {
+  workspace: Workspace
+  emit: (event: WorkspaceEvent) => void
+  judge: AppearanceJudge
+  shouldVerify: boolean
+  name: string
+  extension: string
+  schema: { parse: (raw: unknown) => T }
+  build: (workspace: Workspace, path: string, spec: unknown) => Promise<void>
+}) {
+  return tool({
+    description:
+      `Create a ${config.name} and VERIFY it. Before this returns, the file is checked three ` +
+      `ways: its package structure, whether an office suite can open and re-save it, and ` +
+      `whether a fresh reviewer looking at the rendered pages thinks it matches the request. ` +
+      `If a check fails you are told what is wrong — fix it and call this again rather than ` +
+      `telling the user it is ready.`,
+    inputSchema: z.object({
+      path: z.string().describe(`Workspace path ending in .${config.extension}`),
+      request: z
+        .string()
+        .describe(
+          'What this document is meant to be, in one or two sentences. The reviewer has not ' +
+            'seen this conversation and judges the rendering against this alone.',
+        ),
+      spec: config.schema as never,
+    }),
+    execute: async ({ path, request, spec }: { path: string; request: string; spec: unknown }) => {
+      const target = path.endsWith(`.${config.extension}`) ? path : `${path}.${config.extension}`
+
+      // Models sometimes send a structured argument as a JSON string. Parsing
+      // it costs nothing; refusing costs the user a retry.
+      let parsed: unknown = spec
+      if (typeof parsed === 'string') {
+        try {
+          parsed = JSON.parse(parsed)
+        } catch {
+          return { ok: false, stage: 'build', reason: 'spec was a string but not valid JSON.' }
+        }
+      }
+
+      try {
+        config.schema.parse(parsed)
+        await config.build(config.workspace, target, parsed)
+      } catch (err) {
+        return { ok: false, stage: 'build', reason: describe(err) }
+      }
+
+      config.emit({
+        type: 'workspace.file.changed',
+        runId: 'ui',
+        ts: Date.now(),
+        path: target,
+        op: 'created',
+      })
+
+      if (!config.shouldVerify) return { ok: true, path: target, verified: false }
+
+      const verdict = await verifyDocument(config.workspace, target, { request, judge: config.judge })
+
+      return {
+        ok: verdict.ok,
+        path: target,
+        verified: true,
+        gates: verdict.gates.map((gate) => ({
+          gate: gate.gate,
+          passed: gate.passed,
+          detail: gate.detail,
+        })),
+        ...(verdict.ok
+          ? {}
+          : {
+              note: 'Written but not passed. Fix it and create it again; do not tell the user it is ready.',
+            }),
+      }
+    },
+  })
 }
 
 /**
@@ -201,6 +255,20 @@ export function makeSubagentJudge(options: DocumentToolOptions): AppearanceJudge
       modelAlias: options.judgeModelAlias ?? 'Light',
       maxSteps: 2,
       onEvent: options.emit,
+    })
+
+    // The reviewer costs money. Rolled into the session total the user is
+    // watching, or a document that took seven verification passes looks free.
+    options.gateway.meter.record(scout.cost)
+    const totals = options.gateway.totals()
+    options.emit({
+      type: 'cost.updated',
+      runId: 'ui',
+      ts: Date.now(),
+      run: totals.run,
+      session: totals.session,
+      delta: scout.cost,
+      model: options.judgeModelAlias ?? 'Light',
     })
 
     if (scout.stoppedBy !== 'complete') {
@@ -261,6 +329,9 @@ export const SPEC_EXAMPLES = {
   pptx: {
     title: 'The Agentic Workspace',
     subtitle: 'Plan v2',
+    // No `coverSlide` here on purpose. The example is what the model copies,
+    // so an example that opts into a cover produces a cover every time —
+    // including when the user asked for exactly three slides and got four.
     slides: [
       {
         title: 'Why now',

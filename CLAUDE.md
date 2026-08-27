@@ -66,6 +66,14 @@ because they are the ones that quietly decay over a long context.
   be loaded", including for a plain `.txt`. Gates 2 and 3 skip loudly when it is missing rather
   than passing quietly. Multi-page rendering also needs `poppler-utils`; without it only page one
   is rendered and `RenderResult.via` says `'libreoffice'` so a caller knows.
+- **A tool parameter the model cannot see the shape of is a parameter it cannot fill in.**
+  `spec: z.unknown()` with the shape in a separate help tool failed every time — the model
+  serialised its object and sent a JSON *string*. Put the real schema in the tool definition,
+  one tool per document type. And remember the worked example in `SPEC_EXAMPLES` is what the
+  model copies: an example that opts into an optional flag produces that flag every time.
+- **Builders add nothing the caller did not ask for.** An implicit cover slide turned "three
+  slides" into four, the reviewer rejected it correctly, and the model could not express "no
+  cover" — so it fought the builder for nine attempts. Implicit content is very hard to drive.
 - **A gate that cannot run reports failure, never success.** No judge, no rasteriser, no reviewer
   — all of them fail the document. A verification step that passes when it could not check is how
   verification quietly stops happening.
