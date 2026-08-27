@@ -1,6 +1,7 @@
 import { tool, type ToolSet } from 'ai'
 import { z } from 'zod'
-import { skillCatalogue, type ParsedSkill } from './registry.js'
+import { skillCatalogue } from './registry.js'
+import type { ParsedSkill } from './parse.js'
 
 /**
  * Opening a skill.
