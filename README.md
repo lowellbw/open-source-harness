@@ -77,7 +77,7 @@ Copy `apps/web/mcp.config.example.json` to `apps/web/mcp.config.json` to connect
 ## Tests
 
 ```bash
-pnpm test          # 284 tests; Docker conformance skips if the daemon is absent
+pnpm test          # 290 tests; Docker conformance skips if the daemon is absent
 pnpm -r typecheck
 ```
 
@@ -123,11 +123,17 @@ A full live pass costs well under a cent — it runs on the cheapest tier under 
 | `packages/documents` | docx/pptx/xlsx builders, LibreOffice rendering, the three verification gates. |
 | `packages/mcp` | MCP client, tool-description pinning, deferred loading. |
 | `apps/web` | The workspace you open. |
-| `apps/sidecar` | Node process the Mac shell launches. Serves the same app; token-gated loopback. |
+| `apps/sidecar` | Node process the Mac shell launches. Serves the same app; token-gated loopback, and the seam that translates the shell's environment contract. |
 | `apps/mac-shell` | Swift shell — **source only, never compiled.** See its README. |
 
 ## Known limits
 
+- The sidecar needs **Node 22.3 or newer** — `node:sqlite`, which conversation history depends
+  on, landed there. It refuses to start on anything older rather than serving a UI that 500s on
+  the first thread. Worth knowing on a Mac, where `/usr/local/bin/node` is often Homebrew's and
+  may be well behind.
+- On macOS LibreOffice is inside its app bundle and **not on PATH**. It is looked for there and
+  in the Homebrew prefixes; `LIBREOFFICE_PATH` overrides.
 - `apps/mac-shell` has never been built or run. It was written on Linux, where SwiftUI, AppKit,
   WebKit and Security.framework do not exist. Treat it as a starting point, not a working app.
 - Sessions live in server memory and workspaces in a temp directory, which suits the local

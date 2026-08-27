@@ -53,6 +53,82 @@ const webDir = path.resolve(
   process.env.AGENTIC_WEB_DIR ?? '../web',
 )
 
+/**
+ * Translate the shell's contract into the names the application reads.
+ *
+ * The Swift shell and the web application were written against different
+ * vocabularies, and every mismatch fails silently or nearly so:
+ *
+ *   - `AGENTIC_PROVIDER_API_KEY` is what SidecarLaunch.swift sets; the model
+ *     gateway reads `OPENROUTER_API_KEY`. Without this the app starts and then
+ *     refuses every turn with "No model provider key".
+ *   - `AGENTIC_DATA_DIR` points at Application Support, which is the only
+ *     place a sandboxed Mac app may write. The app defaults to
+ *     `~/.agentic-workspace`, which such an app cannot create — so it would
+ *     fail on the first thread rather than at startup, where it would be
+ *     obvious.
+ *
+ * This runs BEFORE `next()` is constructed, because the application reads both
+ * at module scope: setting them after the app has loaded changes nothing.
+ *
+ * The alternative — renaming one side — was rejected because the Swift side is
+ * a published contract with its own documentation, and the web side is
+ * documented in the README and .env.example. A sidecar exists to be the seam
+ * between two things that do not otherwise agree.
+ */
+/**
+ * Refuse to start on a Node that cannot run the application.
+ *
+ * `node:sqlite` — which every thread, message and cost row goes through —
+ * landed in 22.3. On anything older the sidecar starts perfectly, announces
+ * itself, serves the UI, and then returns 500 for the first thread anybody
+ * opens. The real error is one line in stderr; what the user sees is an app
+ * that does not work.
+ *
+ * Checked here because the shell resolves `node` from several candidate paths
+ * (SidecarLaunch.swift `resolveNodeExecutable`), so which one it finds depends
+ * on the machine. Failing at launch puts the message on the shell's failure
+ * screen, where it is read, instead of in a log nobody opens.
+ */
+const MINIMUM_NODE = [22, 3, 0]
+
+function assertNodeVersion() {
+  const [major = 0, minor = 0] = process.versions.node.split('.').map(Number)
+  const [needMajor, needMinor] = MINIMUM_NODE
+
+  if (major > needMajor || (major === needMajor && minor >= needMinor)) return
+
+  log(
+    `FATAL: Node ${process.versions.node} is too old. ` +
+      `This needs ${needMajor}.${needMinor} or newer, because node:sqlite — ` +
+      `which conversation history depends on — was added in ${needMajor}.${needMinor}. ` +
+      `Running at ${process.execPath}.`,
+  )
+  process.exit(1)
+}
+
+assertNodeVersion()
+
+function bridgeEnvironment() {
+  const alias = (from, to) => {
+    if (process.env[from] && !process.env[to]) {
+      process.env[to] = process.env[from]
+      log(`mapped ${from} -> ${to}`)
+    }
+  }
+
+  alias('AGENTIC_PROVIDER_API_KEY', 'OPENROUTER_API_KEY')
+  alias('AGENTIC_DATA_DIR', 'AGENTIC_WORKSPACE_HOME')
+  alias('AGENTIC_SEARCH_API_KEY', 'BRAVE_API_KEY')
+
+  if (!process.env.OPENROUTER_API_KEY) {
+    // Said at startup rather than left for the first turn to discover.
+    log('WARNING: no model provider key. Every turn will fail until one is set.')
+  }
+}
+
+bridgeEnvironment()
+
 const app = next({ dev: false, dir: webDir })
 const handle = app.getRequestHandler()
 
@@ -180,8 +256,10 @@ server.listen(Number.isFinite(requestedPort) ? requestedPort : 0, '127.0.0.1', (
   process.stdout.write(`${READY_MARKER} ${JSON.stringify({ port, token })}\n`)
 
   log(`listening on 127.0.0.1:${port}`)
-  log(`data dir: ${process.env.AGENTIC_DATA_DIR ?? '(unset)'}`)
+  log(`data dir: ${process.env.AGENTIC_WORKSPACE_HOME ?? '(default: ~/.agentic-workspace)'}`)
   log(`shell: ${process.env.AGENTIC_SHELL ?? 'unknown'}`)
+  log(`model key: ${process.env.OPENROUTER_API_KEY ? 'present' : 'MISSING'}`)
+  log(`search: ${process.env.BRAVE_API_KEY ? 'brave' : 'provider-native'}`)
 })
 
 server.on('error', (err) => {

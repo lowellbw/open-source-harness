@@ -33,6 +33,57 @@ export interface RenderResult {
 
 const OFFICE = new Set(['docx', 'pptx', 'xlsx', 'odt', 'odp', 'ods', 'doc', 'ppt', 'xls'])
 
+/**
+ * Where LibreOffice actually is.
+ *
+ * `soffice` is on PATH on Linux and is NOT on macOS: the app bundle installs
+ * it at /Applications/LibreOffice.app/Contents/MacOS/soffice and adds nothing
+ * to PATH. Invoking it bare therefore works in a container and fails on every
+ * Mac, with the unhelpful symptom "LibreOffice produced no PDF" — the same
+ * message a genuinely broken document gives.
+ *
+ * Resolved once per workspace and cached, because it is a subprocess per check
+ * and the answer cannot change while the workspace lives.
+ */
+const CANDIDATES = [
+  'soffice',
+  'libreoffice',
+  '/Applications/LibreOffice.app/Contents/MacOS/soffice',
+  '/opt/homebrew/bin/soffice',
+  '/usr/local/bin/soffice',
+]
+
+const officeCache = new Map<string, string | null>()
+
+export async function resolveOffice(workspace: Workspace): Promise<string | null> {
+  const cached = officeCache.get(workspace.id)
+  if (cached !== undefined) return cached
+
+  // An explicit override wins, for an install in none of the usual places.
+  const override = process.env.LIBREOFFICE_PATH
+  const list = override ? [override, ...CANDIDATES] : CANDIDATES
+
+  let found: string | null = null
+  for (const candidate of list) {
+    const probe = await workspace.exec(
+      candidate.startsWith('/') ? `test -x "$C" && echo yes` : `command -v "$C" >/dev/null && echo yes`,
+      { env: { C: candidate }, timeoutMs: 10_000 },
+    )
+    if (probe.stdout.includes('yes')) {
+      found = candidate
+      break
+    }
+  }
+
+  officeCache.set(workspace.id, found)
+  return found
+}
+
+/** Forgets a cached lookup. For tests, and for a workspace being reused. */
+export function clearOfficeCache(): void {
+  officeCache.clear()
+}
+
 export function isRenderable(path: string): boolean {
   const extension = path.split('.').pop()?.toLowerCase() ?? ''
   return OFFICE.has(extension) || extension === 'pdf'
@@ -66,16 +117,27 @@ export async function toPdf(
   // believe it had rendered the new.
   await workspace.remove(`${outputDir}/${base}.pdf`).catch(() => {})
 
+  const office = await resolveOffice(workspace)
+  if (!office) {
+    return {
+      ok: false,
+      reason:
+        'LibreOffice was not found. Install libreoffice-writer, -impress and -calc on Linux, ' +
+        'or LibreOffice.app on macOS, or set LIBREOFFICE_PATH. Note that installing only ' +
+        'libreoffice-core gives you an soffice that runs and converts nothing.',
+    }
+  }
+
   // -env:UserInstallation gives each run its own profile directory. Without it
   // concurrent soffice invocations fight over a shared lock and one silently
   // produces nothing — which reads as "the document is broken".
   const result = await workspace.exec(
-    `soffice --headless --norestore ` +
+    `"$SOFFICE" --headless --norestore ` +
       `-env:UserInstallation=file:///tmp/lo-$$ ` +
       `--convert-to pdf --outdir "$OUTDIR" "$INPUT" 2>&1`,
     {
       timeoutMs,
-      env: { OUTDIR: `.${outputDir}`, INPUT: `.${path}` },
+      env: { SOFFICE: office, OUTDIR: `.${outputDir}`, INPUT: `.${path}` },
     },
   )
 
@@ -143,11 +205,14 @@ export async function toImages(
   }
 
   // No poppler. LibreOffice can rasterise directly, but only the first page.
-  const fallback = await workspace.exec(
-    `soffice --headless --norestore -env:UserInstallation=file:///tmp/lo-png-$$ ` +
-      `--convert-to png --outdir "$OUTDIR" "$INPUT" 2>&1`,
-    { timeoutMs, env: { OUTDIR: `.${outputDir}`, INPUT: `.${path}` } },
-  )
+  const office = await resolveOffice(workspace)
+  const fallback = office
+    ? await workspace.exec(
+        `"$SOFFICE" --headless --norestore -env:UserInstallation=file:///tmp/lo-png-$$ ` +
+          `--convert-to png --outdir "$OUTDIR" "$INPUT" 2>&1`,
+        { timeoutMs, env: { SOFFICE: office, OUTDIR: `.${outputDir}`, INPUT: `.${path}` } },
+      )
+    : { stdout: 'LibreOffice not found.' }
 
   const single = `${outputDir}/${basename(path).replace(/\.[^.]+$/, '')}.png`
   if (await workspace.exists(single)) {

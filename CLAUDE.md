@@ -77,6 +77,11 @@ because they are the ones that quietly decay over a long context.
 - **A gate that cannot run reports failure, never success.** No judge, no rasteriser, no reviewer
   — all of them fail the document. A verification step that passes when it could not check is how
   verification quietly stops happening.
+- **The sidecar is the seam between the shell's vocabulary and the app's.** SidecarLaunch.swift
+  sets `AGENTIC_PROVIDER_API_KEY`, `AGENTIC_DATA_DIR` and `AGENTIC_SEARCH_API_KEY`; the app reads
+  `OPENROUTER_API_KEY`, `AGENTIC_WORKSPACE_HOME` and `BRAVE_API_KEY`. `bridgeEnvironment()` maps
+  them BEFORE `next()` is constructed, because the app reads them at module scope. Do not
+  "simplify" this by renaming either side — both are published contracts.
 - **`apps/mac-shell` cannot be built or tested on Linux.** Seatbelt, TCC/PPPC, Keychain,
   FSEvents+`clonefile` and notarization need a Mac runner. Do not attempt them in CI here.
 

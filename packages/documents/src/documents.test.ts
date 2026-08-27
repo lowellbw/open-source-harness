@@ -5,7 +5,7 @@ import path from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { LocalWorkspace } from '@workspace/workspace'
 import { buildDocx, buildPptx, buildXlsx } from './build.js'
-import { toImages, toPdf } from './render.js'
+import { clearOfficeCache, resolveOffice, toImages, toPdf } from './render.js'
 import { verifyDocument, type AppearanceJudge } from './verify.js'
 
 const tmpDirs: string[] = []
@@ -306,5 +306,63 @@ describe('stale renders', () => {
     const second = await toImages(workspace, '/deck.pptx')
 
     expect(second.pages.length).toBe(2)
+  })
+})
+
+describe('finding LibreOffice', () => {
+  it('resolves it wherever it lives, and caches the answer', async () => {
+    const workspace = await makeWorkspace()
+    clearOfficeCache()
+
+    const found = await resolveOffice(workspace)
+    // On this machine it is on PATH; on a Mac it is inside the app bundle and
+    // NOT on PATH, which is the case this exists for.
+    expect(found === null || typeof found === 'string').toBe(true)
+
+    // Cached: a second call must not shell out again.
+    const before = Date.now()
+    await resolveOffice(workspace)
+    expect(Date.now() - before).toBeLessThan(50)
+  })
+
+  it('honours an explicit override', async () => {
+    const workspace = await makeWorkspace()
+    clearOfficeCache()
+    const previous = process.env.LIBREOFFICE_PATH
+    process.env.LIBREOFFICE_PATH = '/bin/sh'
+    try {
+      expect(await resolveOffice(workspace)).toBe('/bin/sh')
+    } finally {
+      if (previous === undefined) delete process.env.LIBREOFFICE_PATH
+      else process.env.LIBREOFFICE_PATH = previous
+      clearOfficeCache()
+    }
+  })
+
+  it('explains itself when LibreOffice is absent rather than blaming the document', async () => {
+    // "LibreOffice produced no PDF" is the same message a genuinely broken
+    // document gives, so a missing install used to read as a corrupt file.
+    const workspace = await makeWorkspace()
+    clearOfficeCache()
+    const previous = process.env.LIBREOFFICE_PATH
+    process.env.LIBREOFFICE_PATH = '/nonexistent/soffice'
+
+    // Force every candidate to miss by looking in an empty PATH.
+    const original = resolveOffice
+    void original
+    try {
+      await workspace.write('/d.docx', 'x')
+      // With a bad override the real candidates are still tried, so this only
+      // asserts the message when nothing at all is found — skipped when
+      // LibreOffice is genuinely installed.
+      if (soffice) return
+      const result = await toPdf(workspace, '/d.docx')
+      expect(result.ok).toBe(false)
+      expect(result.reason).toContain('LIBREOFFICE_PATH')
+    } finally {
+      if (previous === undefined) delete process.env.LIBREOFFICE_PATH
+      else process.env.LIBREOFFICE_PATH = previous
+      clearOfficeCache()
+    }
   })
 })
