@@ -41,8 +41,45 @@ const samples: WorkspaceEvent[] = [
     afterTokens: 20_000,
   },
   { type: 'model.switched', runId: 'r1', ts: 15, from: 'a', to: 'b', atCompactionBoundary: true },
-  { type: 'cost.updated', runId: 'r1', ts: 16, run: zeroCost, session: zeroCost },
+  {
+    type: 'cost.updated',
+    runId: 'r1',
+    ts: 16,
+    run: zeroCost,
+    session: zeroCost,
+    delta: zeroCost,
+    model: 'Standard',
+  },
   { type: 'workspace.file.changed', runId: 'r1', ts: 17, path: '/out/deck.pptx', op: 'created' },
+  { type: 'step.started', runId: 'r1', ts: 21, stepNumber: 0, activeTools: ['readFile'] },
+  {
+    type: 'step.finished',
+    runId: 'r1',
+    ts: 22,
+    stepNumber: 0,
+    cost: zeroCost,
+    toolCalls: 2,
+    durationMs: 812.4,
+    finishReason: 'tool-calls',
+  },
+  { type: 'subagent.started', runId: 'r1', ts: 19, subagentId: 's1', task: 'Find the condenser' },
+  {
+    type: 'subagent.finished',
+    runId: 'r1',
+    ts: 20,
+    subagentId: 's1',
+    cost: zeroCost,
+    stoppedBy: 'complete',
+    reportChars: 412,
+  },
+  {
+    type: 'source.cited',
+    runId: 'r1',
+    ts: 18,
+    messageId: 'm1',
+    url: 'https://www.libreoffice.org/download/',
+    title: 'Download — LibreOffice',
+  },
 ]
 
 describe('event schema', () => {
@@ -119,6 +156,7 @@ describe('four-bucket cost model', () => {
     outputPerMtok: 10,
     cacheWriteMultiplier: 1.25,
     cacheReadMultiplier: 0.1,
+    webSearchPerCall: 0.005,
   }
 
   it('prices each bucket at its own rate', () => {
@@ -129,11 +167,29 @@ describe('four-bucket cost model', () => {
         cacheReadTokens: 1_000_000,
         outputTokens: 1_000_000,
         reasoningTokens: 0,
+        webSearches: 0,
       },
       rates,
     )
     // 2.00 input + 2.50 cache write (1.25x) + 0.20 cache read (0.1x) + 10.00 output
     expect(c.usd).toBeCloseTo(14.7, 6)
+  })
+
+  it('prices web searches per call, not per token', () => {
+    // A search is billed as an event. At $0.005 each, twenty of them cost more
+    // than a whole cheap-tier turn — which is why they cannot be left out.
+    const c = priceUsage(
+      {
+        uncachedInputTokens: 0,
+        cacheWriteTokens: 0,
+        cacheReadTokens: 0,
+        outputTokens: 0,
+        reasoningTokens: 0,
+        webSearches: 3,
+      },
+      rates,
+    )
+    expect(c.usd).toBeCloseTo(0.015, 6)
   })
 
   it('does NOT bill reasoning tokens on top of output — they are a subset of it', () => {
@@ -142,6 +198,7 @@ describe('four-bucket cost model', () => {
       cacheWriteTokens: 0,
       cacheReadTokens: 0,
       outputTokens: 1_000_000,
+      webSearches: 0,
     }
     const withReasoning = priceUsage({ ...base, reasoningTokens: 900_000 }, rates)
     const without = priceUsage({ ...base, reasoningTokens: 0 }, rates)
@@ -158,6 +215,7 @@ describe('four-bucket cost model', () => {
         cacheReadTokens: 0,
         outputTokens: 50,
         reasoningTokens: 10,
+        webSearches: 0,
       },
       rates,
     )
@@ -165,6 +223,7 @@ describe('four-bucket cost model', () => {
       uncachedInputTokens: 200,
       outputTokens: 100,
       reasoningTokens: 20,
+      webSearches: 0,
     })
   })
 })

@@ -58,12 +58,39 @@ export const toolResultPartSchema = z.object({
   elidedTo: z.string().optional(),
 })
 
+/**
+ * An image or document the user attached.
+ *
+ * Carries a workspace PATH, not bytes. Conversation history is persisted to
+ * SQLite and condensed on every request; a base64 image inline would be
+ * megabytes of it, re-serialised each turn, and would defeat the condenser's
+ * token accounting entirely. The bytes are read from the workspace at the
+ * point of conversion, which is also the only place that needs them.
+ */
+export const filePartSchema = z.object({
+  type: z.literal('file'),
+  /**
+   * Workspace path.
+   *
+   * Optional because a part reconstructed mid-turn from the SDK's own message
+   * array has bytes but no path — the SDK does not carry ours. Every part that
+   * is PERSISTED has one, because it came from an attachment the user made.
+   */
+  path: z.string().optional(),
+  mediaType: z.string(),
+  /** Shown in the UI. The path is often a temp name nobody chose. */
+  filename: z.string().optional(),
+})
+
 export const partSchema = z.discriminatedUnion('type', [
   textPartSchema,
   reasoningPartSchema,
   toolCallPartSchema,
   toolResultPartSchema,
+  filePartSchema,
 ])
+
+export type FilePart = z.infer<typeof filePartSchema>
 
 export const roleSchema = z.enum(['system', 'user', 'assistant', 'tool'])
 

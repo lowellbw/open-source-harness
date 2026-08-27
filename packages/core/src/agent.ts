@@ -1,15 +1,22 @@
 import { streamText, stepCountIs, type ToolSet } from 'ai'
 import { randomUUID } from 'node:crypto'
-import type { Message, WorkspaceEvent } from '@workspace/protocol'
+import type { FilePart, Message, WorkspaceEvent } from '@workspace/protocol'
 import {
   ModelGateway,
   prepareForProvider,
   isSwitchSafe,
+  serverWebSearches,
   BudgetExceededError,
 } from '@workspace/gateway-model'
 import { condense, defaultCondenserOptions } from './condenser.js'
 import { PolicyPin, type OrgPolicy } from './pinning.js'
-import { fromModelMessages, toInstructions, toModelMessages } from './adapter.js'
+import {
+  fromModelMessages,
+  resolveAttachments,
+  toInstructions,
+  toModelMessages,
+  type ReadAttachment,
+} from './adapter.js'
 
 /**
  * The agent loop.
@@ -55,10 +62,44 @@ export interface AgentConfig {
    * asked for reach the prompt. Return undefined to send all of them.
    */
   activeTools?: () => string[] | undefined
+  /**
+   * How hard the model should think, where it accepts the instruction.
+   *
+   * Sent only when the catalog entry says the model honours it — passing a
+   * knob a model ignores is how a UI control comes to mean nothing.
+   */
+  reasoningEffort?: ReasoningEffort
   onEvent?: (event: WorkspaceEvent) => void
   persistToolOutput?: (toolCallId: string, output: unknown) => Promise<string>
   summarise?: (messages: Message[]) => Promise<string>
+  /**
+   * History to resume from, in order.
+   *
+   * The agent is deliberately not the thing that loads it. Reading from a store
+   * here would make the core depend on persistence, and the two shells disagree
+   * about where the database lives; the session layer knows and passes it in.
+   */
+  initialHistory?: Message[]
+  /**
+   * Fired as each message joins history, not in a batch at the end of the turn.
+   *
+   * Batching would lose the user's question if the process died mid-call, which
+   * is the moment a conversation is most worth keeping: whatever was asked that
+   * made it crash.
+   */
+  onMessage?: (message: Message) => void
+  /**
+   * Reads an attachment's bytes at request time.
+   *
+   * History stores a path, never bytes: a base64 image inline would be
+   * re-serialised into SQLite and re-counted by the condenser every single
+   * turn. Without this, an attachment degrades to a note saying it is
+   * unavailable rather than failing the turn.
+   */
+  readAttachment?: ReadAttachment
 }
+
+export type ReasoningEffort = 'low' | 'medium' | 'high'
 
 export interface TurnResult {
   text: string
@@ -72,14 +113,25 @@ export class Agent {
   private history: Message[] = []
   private threadId = randomUUID()
   private currentAlias: string
+  private effort: ReasoningEffort | undefined
 
   constructor(private readonly config: AgentConfig) {
     this.pin = new PolicyPin(config.policy)
     this.currentAlias = config.modelAlias
+    this.effort = config.reasoningEffort
+    // Copied, not aliased: the caller's array is usually the store's return
+    // value, and appending to it as a side effect of running a turn is the kind
+    // of shared-mutable-state bug that only shows up under a second session.
+    if (config.initialHistory) this.history = [...config.initialHistory]
   }
 
   getHistory(): Message[] {
     return this.history
+  }
+
+  /** Changes thinking effort for subsequent turns. */
+  setReasoningEffort(effort: ReasoningEffort | undefined): void {
+    this.effort = effort
   }
 
   /**
@@ -111,16 +163,24 @@ export class Agent {
     })
   }
 
-  async send(userText: string): Promise<TurnResult> {
+  async send(
+    userText: string,
+    options: { attachments?: FilePart[] } = {},
+  ): Promise<TurnResult> {
     const runId = randomUUID()
     this.config.gateway.startRun()
 
-    this.history.push({
+    const userMessage: Message = {
       id: randomUUID(),
       role: 'user',
       pinned: false,
-      parts: [{ type: 'text', text: userText }],
-    })
+      parts: [
+        { type: 'text', text: userText },
+        ...(options.attachments ?? []),
+      ],
+    }
+    this.history.push(userMessage)
+    this.config.onMessage?.(userMessage)
 
     this.emit({ type: 'run.started', runId, ts: Date.now(), threadId: this.threadId })
     this.emit({ type: 'status', runId, ts: Date.now(), state: 'thinking' })
@@ -128,18 +188,55 @@ export class Agent {
     const messageId = randomUUID()
     let text = ''
 
+    /**
+     * The real error, kept from the stream.
+     *
+     * When `prepareStep` throws — which is where the budget ceiling is
+     * enforced — the SDK surfaces the original error as an `error` part and
+     * then rejects `result.usage` with a generic `NoOutputGeneratedError` that
+     * carries no `cause` chain back to it. Classifying on what the `await`
+     * throws therefore reports every mid-turn budget stop as a plain failure:
+     * the user is told something went wrong rather than that they hit their
+     * spend limit. Verified against the SDK, not assumed.
+     *
+     * Declared out here rather than in the try, because the catch is the only
+     * place it is read.
+     */
+    let streamError: unknown
+
     try {
       // Inside the try: resolve() enforces the budget ceiling and role gating,
       // and both must surface as a returned result rather than a thrown error.
       // A caller asking the agent to do something should always get a verdict.
       const resolved = this.config.gateway.resolve(this.currentAlias, this.config.role)
 
+      // Provider-run tools ride along with our own, but they behave nothing
+      // like them: there is no `execute`, and — verified against a live
+      // response — no `tool-call` part in the stream either. The entire search
+      // happens inside the provider's request. What comes back is `source`
+      // parts, emitted below, and a count in the raw usage, which is where the
+      // meter reads it.
+      const providerToolNames = Object.keys(resolved.providerTools)
+      let webSearches = 0
+      let stepNumber = 0
+      let toolCallsThisStep = 0
+
       const result = streamText({
         model: resolved.model,
-        tools: resolveTools(this.config.tools),
+        tools: { ...resolveTools(this.config.tools), ...resolved.providerTools },
         stopWhen: stepCountIs(this.config.maxSteps ?? 12),
         instructions: toInstructions(this.pin.messages()),
-        messages: toModelMessages(this.history),
+        messages: toModelMessages(
+          this.config.readAttachment
+            ? await resolveAttachments(this.history, this.config.readAttachment)
+            : this.history,
+        ),
+
+        // Only where the model actually honours it. `supportsReasoningEffort`
+        // comes from the provider's own parameter list, not from a guess.
+        ...(this.effort && resolved.entry.supportsReasoningEffort
+          ? { providerOptions: { openrouter: { reasoning: { effort: this.effort } } } }
+          : {}),
 
         prepareStep: async ({ messages }) => {
           // Ceiling first: refusing the next call is what bounds spend, since a
@@ -176,7 +273,19 @@ export class Agent {
 
           const forProvider = prepareForProvider(condensed.messages, resolved.vendor)
 
+          // Provider tools are appended unconditionally: deferred loading exists
+          // to keep dozens of MCP schemas out of the prompt, and dropping the
+          // provider's own search along with them would silently disable it the
+          // moment a connector is configured.
           const active = this.config.activeTools?.()
+
+          this.emit({
+            type: 'step.started',
+            runId,
+            ts: Date.now(),
+            stepNumber,
+            ...(active ? { activeTools: [...active, ...providerToolNames] } : {}),
+          })
 
           return {
             // Rebuilt from source every step. History never holds the only
@@ -187,7 +296,7 @@ export class Agent {
               }),
             ),
             messages: toModelMessages(forProvider.messages),
-            ...(active ? { activeTools: active as never } : {}),
+            ...(active ? { activeTools: [...active, ...providerToolNames] as never } : {}),
           }
         },
       })
@@ -209,7 +318,50 @@ export class Agent {
           this.emit({ type: 'message.delta', runId, ts: Date.now(), messageId, delta: part.text })
         } else if (part.type === 'reasoning-delta') {
           this.emit({ type: 'reasoning.delta', runId, ts: Date.now(), messageId, delta: part.text })
+        } else if (part.type === 'error') {
+          streamError = part.error
+        } else if (part.type === 'finish-step') {
+          // Summed per step rather than read from the final total: the raw
+          // provider payload the count lives in does not survive aggregation.
+          const searchesThisStep = serverWebSearches(part.usage)
+          webSearches += searchesThisStep
+
+          // Priced here rather than waiting for the turn to end, so a long
+          // multi-step turn shows its cost accruing instead of arriving as one
+          // number after the fact.
+          const stepCost = this.config.gateway.priceOnly(this.currentAlias, part.usage, {
+            webSearches: searchesThisStep,
+          })
+
+          const stepTime = (part as { performance?: { stepTimeMs?: number } }).performance
+            ?.stepTimeMs
+
+          this.emit({
+            type: 'step.finished',
+            runId,
+            ts: Date.now(),
+            stepNumber,
+            cost: stepCost,
+            toolCalls: toolCallsThisStep,
+            ...(typeof stepTime === 'number' ? { durationMs: stepTime } : {}),
+            ...(part.finishReason ? { finishReason: part.finishReason } : {}),
+          })
+
+          stepNumber += 1
+          toolCallsThisStep = 0
+        } else if (part.type === 'source') {
+          if (part.sourceType === 'url') {
+            this.emit({
+              type: 'source.cited',
+              runId,
+              ts: Date.now(),
+              messageId,
+              url: part.url,
+              title: part.title ?? part.url,
+            })
+          }
         } else if (part.type === 'tool-call') {
+          toolCallsThisStep += 1
           this.emit({
             type: 'tool.call.started',
             runId,
@@ -227,35 +379,65 @@ export class Agent {
             result: part.output,
             isError: false,
           })
+        } else if (part.type === 'tool-error') {
+          /*
+           * A separate stream part, not a `tool-result` with a flag.
+           *
+           * Handling only `tool-result` left a failed tool with no finished
+           * event at all, so its card stayed on "running" for the rest of the
+           * session — the user watching a tool that had already thrown, with
+           * nothing to say it had. Found by counting cards against steps in the
+           * browser: three tool calls, two finished.
+           */
+          this.emit({
+            type: 'tool.call.finished',
+            runId,
+            ts: Date.now(),
+            toolCallId: part.toolCallId,
+            result: { error: part.error instanceof Error ? part.error.message : String(part.error) },
+            isError: true,
+          })
         }
       }
 
       this.emit({ type: 'message.finished', runId, ts: Date.now(), messageId })
 
       const usage = await result.usage
-      const cost = this.config.gateway.recordUsage(this.currentAlias, usage)
+      const cost = this.config.gateway.recordUsage(this.currentAlias, usage, { webSearches })
       const totals = this.config.gateway.totals()
-      this.emit({ type: 'cost.updated', runId, ts: Date.now(), run: totals.run, session: totals.session })
+      this.emit({
+        type: 'cost.updated',
+        runId,
+        ts: Date.now(),
+        run: totals.run,
+        session: totals.session,
+        delta: cost,
+        model: this.currentAlias,
+      })
 
-      this.history.push({
+      const assistantMessage: Message = {
         id: messageId,
         role: 'assistant',
         pinned: false,
         parts: [{ type: 'text', text }],
-      })
+      }
+      this.history.push(assistantMessage)
+      this.config.onMessage?.(assistantMessage)
 
       this.emit({ type: 'run.finished', runId, ts: Date.now(), reason: 'complete' })
       this.emit({ type: 'status', runId, ts: Date.now(), state: 'idle' })
-      void cost
 
       return { text, runId, stoppedBy: 'complete' }
     } catch (error) {
-      const reason = error instanceof BudgetExceededError ? 'budget_exceeded' : 'error'
+      // Prefer what the stream reported: it is the original, and the thrown
+      // value is often a wrapper that has lost it.
+      const cause = streamError ?? error
+      const reason = cause instanceof BudgetExceededError ? 'budget_exceeded' : 'error'
       this.emit({
         type: 'run.error',
         runId,
         ts: Date.now(),
-        message: error instanceof Error ? error.message : String(error),
+        message: cause instanceof Error ? cause.message : String(cause),
       })
       this.emit({ type: 'run.finished', runId, ts: Date.now(), reason })
       this.emit({ type: 'status', runId, ts: Date.now(), state: 'idle' })
@@ -264,7 +446,7 @@ export class Agent {
         text,
         runId,
         stoppedBy: reason === 'budget_exceeded' ? 'budget_exceeded' : 'error',
-        error: error instanceof Error ? error : new Error(String(error)),
+        error: cause instanceof Error ? cause : new Error(String(cause)),
       }
     }
   }

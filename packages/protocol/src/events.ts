@@ -63,6 +63,81 @@ export const workspaceEventSchema = z.discriminatedUnion('type', [
   z.object({ ...base, type: z.literal('tool.call.started'), toolCallId: z.string(), name: z.string(), args: z.unknown() }),
   z.object({ ...base, type: z.literal('tool.call.finished'), toolCallId: z.string(), result: z.unknown(), isError: z.boolean() }),
 
+  // ---- steps ----
+  /**
+   * One model request inside a turn.
+   *
+   * A turn that calls three tools is four requests, and until now the UI showed
+   * it as one undifferentiated wait. These carry what actually varies per step:
+   * which tools were offered, what came back, what it cost. `stepNumber` is
+   * zero-based, matching the SDK.
+   */
+  z.object({
+    ...base,
+    type: z.literal('step.started'),
+    stepNumber: z.number().int().nonnegative(),
+    /** Undefined means every registered tool was sent. */
+    activeTools: z.array(z.string()).optional(),
+  }),
+  z.object({
+    ...base,
+    type: z.literal('step.finished'),
+    stepNumber: z.number().int().nonnegative(),
+    cost: costBucketsSchema,
+    toolCalls: z.number().int().nonnegative(),
+    /** Wall-clock for the step. What a timeline is actually about. */
+    durationMs: z.number().nonnegative().optional(),
+    /**
+     * Optional because the SDK does not populate it consistently: present on
+     * `finish-step` from a live provider, absent from the same part under a
+     * mock. A trace showing nothing beats one showing a fabricated value.
+     */
+    finishReason: z.string().optional(),
+  }),
+
+  // ---- subagents ----
+  /**
+   * A read-only scout, started and finished.
+   *
+   * Only these two events cross the boundary — deliberately. Forwarding a
+   * scout's whole stream would put its transcript in front of the reader, which
+   * is the same cost the scout exists to avoid, moved from the model's context
+   * to the person's attention. What the parent needs is: what was asked, what
+   * it cost, and what came back.
+   */
+  z.object({
+    ...base,
+    type: z.literal('subagent.started'),
+    subagentId: z.string(),
+    task: z.string(),
+  }),
+  z.object({
+    ...base,
+    type: z.literal('subagent.finished'),
+    subagentId: z.string(),
+    cost: costBucketsSchema,
+    stoppedBy: z.enum(['complete', 'budget_exceeded', 'error']),
+    reportChars: z.number().int().nonnegative(),
+  }),
+
+  // ---- sources ----
+  /**
+   * A page the model cited.
+   *
+   * First-class because provider-side web search leaves no other trace: it runs
+   * inside the model request, so there is no tool call to render and no tool
+   * result to inspect. Without this event a searched answer is
+   * indistinguishable from an asserted one, which is the difference between a
+   * citation the reader can check and a claim they cannot.
+   */
+  z.object({
+    ...base,
+    type: z.literal('source.cited'),
+    messageId: z.string(),
+    url: z.string(),
+    title: z.string(),
+  }),
+
   // ---- approvals ----
   /**
    * `irreversible` is the gate, not a hint. §9: approvals are shown for
@@ -111,7 +186,19 @@ export const workspaceEventSchema = z.discriminatedUnion('type', [
   }),
 
   // ---- cost ----
-  z.object({ ...base, type: z.literal('cost.updated'), run: costBucketsSchema, session: costBucketsSchema }),
+  /**
+   * `delta` is this single request's cost, which the run and session totals
+   * cannot be decomposed back into. The ledger needs the per-request row — a
+   * total is not a record of what was spent, only of how much.
+   */
+  z.object({
+    ...base,
+    type: z.literal('cost.updated'),
+    run: costBucketsSchema,
+    session: costBucketsSchema,
+    delta: costBucketsSchema,
+    model: z.string(),
+  }),
 
   // ---- workspace ----
   z.object({

@@ -21,6 +21,9 @@ export const CUSTOM_EVENT_NAMES = {
   contextCompacted: 'workspace.context.compacted',
   modelSwitched: 'workspace.model.switched',
   costUpdated: 'workspace.cost.updated',
+  sourceCited: 'workspace.source.cited',
+  subagentStarted: 'workspace.subagent.started',
+  subagentFinished: 'workspace.subagent.finished',
   fileChanged: 'workspace.file.changed',
   status: 'workspace.status',
 } as const
@@ -140,6 +143,40 @@ export function toAgUi(event: WorkspaceEvent, ctx: AgUiContext): BaseEvent[] {
           content: stringifyResult(event.result),
         } as BaseEvent,
       ]
+
+    // These two AG-UI has natively, unlike most of our domain events.
+    case 'step.started':
+      return [
+        { type: EventType.STEP_STARTED, timestamp, stepName: `step-${event.stepNumber}` } as BaseEvent,
+      ]
+
+    case 'step.finished':
+      return [
+        { type: EventType.STEP_FINISHED, timestamp, stepName: `step-${event.stepNumber}` } as BaseEvent,
+      ]
+
+    // AG-UI has no subagent concept at 0.0.58 — nor a source or citation
+    // event — so these travel as CUSTOM alongside our other domain events.
+    case 'subagent.started':
+      return custom(CUSTOM_EVENT_NAMES.subagentStarted, {
+        subagentId: event.subagentId,
+        task: event.task,
+      })
+
+    case 'subagent.finished':
+      return custom(CUSTOM_EVENT_NAMES.subagentFinished, {
+        subagentId: event.subagentId,
+        cost: event.cost,
+        stoppedBy: event.stoppedBy,
+        reportChars: event.reportChars,
+      })
+
+    case 'source.cited':
+      return custom(CUSTOM_EVENT_NAMES.sourceCited, {
+        messageId: event.messageId,
+        url: event.url,
+        title: event.title,
+      })
 
     case 'approval.requested':
       return custom(CUSTOM_EVENT_NAMES.approvalRequested, {

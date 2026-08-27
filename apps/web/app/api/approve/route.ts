@@ -11,14 +11,13 @@ export async function POST(req: Request) {
   }
 
   const session = peekSession(sessionId)
-  const pending = session?.pending.get(approvalId)
-  if (!session || !pending) {
-    return Response.json({ ok: false, reason: 'No such pending approval' }, { status: 404 })
-  }
-
-  pending.resolve(decision)
-  for (const listener of session.listeners) {
-    listener({ type: 'approval.resolved', runId: 'ui', ts: Date.now(), approvalId, decision })
+  // The gate emits approval.resolved itself, so every connected shell clears
+  // its prompt without this route knowing who is listening.
+  if (!session?.approvals.resolve(approvalId, decision)) {
+    return Response.json(
+      { ok: false, reason: 'No such pending approval — already answered, or timed out' },
+      { status: 404 },
+    )
   }
   return Response.json({ ok: true })
 }

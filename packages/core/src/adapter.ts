@@ -2,6 +2,15 @@ import type { ModelMessage } from 'ai'
 import type { Message } from '@workspace/protocol'
 
 /**
+ * Reads an attachment's bytes.
+ *
+ * Injected because the adapter must not know what a workspace is — it is the
+ * one file that knows the SDK, and making it also know the execution seam
+ * would tie SDK churn to filesystem churn. The session layer supplies it.
+ */
+export type ReadAttachment = (path: string) => Promise<Uint8Array>
+
+/**
  * Converts our conversation model into the AI SDK's message types.
  *
  * ADR-0001 keeps the slice of the SDK narrow, and this file is where that pays
@@ -25,8 +34,18 @@ export function toModelMessages(messages: Message[]): ModelMessage[] {
         continue
 
       case 'user': {
-        const text = joinText(message)
-        if (text) out.push({ role: 'user', content: text })
+        const content = userContent(message)
+        if (content.length > 0) {
+          // A lone text part goes as a plain string. Every provider accepts the
+          // array form, but the string form is what their prompt caches were
+          // built around, and an unnecessary array is an unnecessary difference.
+          const only = content.length === 1 && content[0]!.type === 'text'
+          out.push(
+            only
+              ? { role: 'user', content: (content[0] as { text: string }).text }
+              : { role: 'user', content },
+          )
+        }
         break
       }
 
@@ -73,7 +92,41 @@ export function fromModelMessages(messages: ModelMessage[]): Message[] {
     }
 
     if (message.role === 'user') {
-      return { id, role: 'user', pinned: false, parts: [{ type: 'text', text: asText(message.content) }] }
+      /*
+       * Attachments must survive this round trip.
+       *
+       * `prepareStep` runs `fromModelMessages` on what the SDK is about to send
+       * and then converts the result back. A version of this that kept only
+       * text stripped every image and file from the FIRST request onwards — so
+       * an attached screenshot never reached the model at all, and the only
+       * symptom was a reply that made no sense. The bytes are carried through
+       * rather than re-read, because the SDK's array is the only place they
+       * still exist at this point.
+       */
+      if (typeof message.content === 'string') {
+        return { id, role: 'user', pinned: false, parts: [{ type: 'text', text: message.content }] }
+      }
+
+      const parts: Message['parts'] = []
+      for (const part of message.content) {
+        if (part.type === 'text') {
+          parts.push({ type: 'text', text: part.text })
+        } else if (part.type === 'image') {
+          parts.push({
+            type: 'file',
+            mediaType: part.mediaType ?? 'image/png',
+            data: toBytes(part.image),
+          } as Message['parts'][number])
+        } else if (part.type === 'file') {
+          parts.push({
+            type: 'file',
+            mediaType: part.mediaType,
+            data: toBytes(part.data),
+            ...(part.filename ? { filename: part.filename } : {}),
+          } as Message['parts'][number])
+        }
+      }
+      return { id, role: 'user', pinned: false, parts }
     }
 
     if (message.role === 'assistant') {
@@ -110,6 +163,95 @@ export function fromModelMessages(messages: ModelMessage[]): Message[] {
     }
     return { id, role: 'tool', pinned: false, parts }
   })
+}
+
+/**
+ * User content, with attachments resolved to data the model can see.
+ *
+ * Attachments are workspace paths in our model; the SDK wants bytes or a URL.
+ * `resolveAttachments` fills in `data` before this runs — this function only
+ * shapes what is already there, so a message whose file has since been deleted
+ * degrades to a note rather than throwing mid-turn.
+ */
+function userContent(message: Message): Extract<ModelMessage, { role: 'user' }>['content'] & object {
+  const parts: Exclude<Extract<ModelMessage, { role: 'user' }>['content'], string> = []
+
+  for (const part of message.parts) {
+    if (part.type === 'text') {
+      if (part.text) parts.push({ type: 'text', text: part.text })
+    } else if (part.type === 'file') {
+      const data = (part as { data?: Uint8Array }).data
+      if (!data) {
+        parts.push({
+          type: 'text',
+          text: `[attachment unavailable: ${part.filename ?? part.path}]`,
+        })
+        continue
+      }
+      // The SDK distinguishes image from file, and providers treat them
+      // differently — an image goes to the vision path, a PDF to the document
+      // path. Sending a PNG as a generic file loses the former.
+      if (part.mediaType.startsWith('image/')) {
+        parts.push({ type: 'image', image: data, mediaType: part.mediaType })
+      } else {
+        parts.push({
+          type: 'file',
+          data,
+          mediaType: part.mediaType,
+          ...(part.filename ? { filename: part.filename } : {}),
+        })
+      }
+    }
+  }
+
+  return parts
+}
+
+/**
+ * Loads attachment bytes for a set of messages.
+ *
+ * Separate from `toModelMessages` so the adapter stays synchronous and free of
+ * any notion of storage, and so a failed read becomes a visible note in the
+ * conversation rather than an exception thrown out of the middle of a turn.
+ */
+export async function resolveAttachments(
+  messages: Message[],
+  read: ReadAttachment,
+): Promise<Message[]> {
+  const anyFiles = messages.some((m) => m.parts.some((p) => p.type === 'file'))
+  if (!anyFiles) return messages
+
+  return Promise.all(
+    messages.map(async (message) => {
+      if (!message.parts.some((p) => p.type === 'file')) return message
+      return {
+        ...message,
+        parts: await Promise.all(
+          message.parts.map(async (part) => {
+            if (part.type !== 'file') return part
+            // Already carries bytes — a part reconstructed mid-turn from the
+            // SDK. Re-reading would need a path it does not have.
+            if ((part as { data?: Uint8Array }).data) return part
+            if (!part.path) return part
+            try {
+              return { ...part, data: await read(part.path) }
+            } catch {
+              return part
+            }
+          }),
+        ),
+      }
+    }),
+  )
+}
+
+/** Whatever shape the SDK used for binary content, as bytes. */
+function toBytes(value: unknown): Uint8Array | undefined {
+  if (value instanceof Uint8Array) return value
+  if (value instanceof ArrayBuffer) return new Uint8Array(value)
+  // A URL or a base64 string cannot be turned back into bytes here, and
+  // guessing would produce a corrupt attachment rather than an absent one.
+  return undefined
 }
 
 function asText(content: unknown): string {

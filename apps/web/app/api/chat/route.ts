@@ -15,13 +15,18 @@ export const dynamic = 'force-dynamic'
  * path, must cross an iframe boundary without touching the host's connect-src.
  */
 export async function POST(req: Request) {
-  const { sessionId, message, modelAlias } = (await req.json()) as {
+  const { sessionId, message, modelAlias, reasoningEffort } = (await req.json()) as {
     sessionId: string
     message: string
     modelAlias?: string
+    reasoningEffort?: 'low' | 'medium' | 'high'
   }
 
   const session = await getSession(sessionId, modelAlias ?? 'Standard')
+
+  // Set per turn rather than per session, so changing it takes effect on the
+  // next thing you send instead of the next thread you open.
+  session.agent.setReasoningEffort(reasoningEffort)
   if (modelAlias && modelAlias !== session.modelAlias) {
     try {
       session.agent.switchModel(modelAlias, { atCompactionBoundary: true })

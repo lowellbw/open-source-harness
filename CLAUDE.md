@@ -41,6 +41,16 @@ because they are the ones that quietly decay over a long context.
   to the workspace root so model-authored paths stay contained; a shell has a real filesystem
   and its own `/`. Containment for `exec` comes from `capabilities.isolated`, never from path
   rewriting — which is why `LocalWorkspace` must not back untrusted work.
+- **A subagent's read-only-ness is a property of its workspace, not of its prompt.** `readOnly()`
+  in `packages/subagents` refuses `write`, `mkdir`, `remove` AND `exec` — a shell is a write
+  primitive, so a scout that can run commands is not read-only. This is why scouts search by
+  walking the tree in JS rather than reusing the grep-backed tools in `packages/session`. Scouts
+  also get their own gateway (own spend ceiling), no MCP, and no spawn tool, so depth is bounded
+  at one.
+- **Session behaviour lives in `packages/session`, never in a shell.** The toolset, the
+  approval gate and connector bring-up are shared code: the Mac sidecar and the web app run
+  the same implementation. Putting product behaviour in `apps/*` makes §3's "one core, three
+  shells" untrue and guarantees the shells drift.
 - **Budgets, quotas and model gating are enforced at the gateway, never only in the UI.**
   Assume the UI is bypassed. (§4)
 - **Never share a sandbox across orgs.** Per-org pools, ephemeral per-user within an org,
@@ -50,6 +60,23 @@ because they are the ones that quietly decay over a long context.
 - **Org policy, permissions and scope re-inject every turn** — pinned outside compactable
   history, never stated only at session start. Compaction otherwise decays constraint
   adherence to measurable violation rates. (§9)
+- **The document gates need LibreOffice's FILTERS, not just its binary.** A base image can carry
+  `libreoffice-core` and `libreoffice-common` with no `-writer`, `-impress` or `-calc`, and then
+  `soffice` exists, exits 0, and converts nothing — every attempt reports "source file could not
+  be loaded", including for a plain `.txt`. Gates 2 and 3 skip loudly when it is missing rather
+  than passing quietly. Multi-page rendering also needs `poppler-utils`; without it only page one
+  is rendered and `RenderResult.via` says `'libreoffice'` so a caller knows.
+- **A tool parameter the model cannot see the shape of is a parameter it cannot fill in.**
+  `spec: z.unknown()` with the shape in a separate help tool failed every time — the model
+  serialised its object and sent a JSON *string*. Put the real schema in the tool definition,
+  one tool per document type. And remember the worked example in `SPEC_EXAMPLES` is what the
+  model copies: an example that opts into an optional flag produces that flag every time.
+- **Builders add nothing the caller did not ask for.** An implicit cover slide turned "three
+  slides" into four, the reviewer rejected it correctly, and the model could not express "no
+  cover" — so it fought the builder for nine attempts. Implicit content is very hard to drive.
+- **A gate that cannot run reports failure, never success.** No judge, no rasteriser, no reviewer
+  — all of them fail the document. A verification step that passes when it could not check is how
+  verification quietly stops happening.
 - **`apps/mac-shell` cannot be built or tested on Linux.** Seatbelt, TCC/PPPC, Keychain,
   FSEvents+`clonefile` and notarization need a Mac runner. Do not attempt them in CI here.
 

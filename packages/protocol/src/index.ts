@@ -29,6 +29,7 @@ export {
   reasoningPartSchema,
   toolCallPartSchema,
   toolResultPartSchema,
+  filePartSchema,
   textOf,
   isReasoning,
   type Message,
@@ -38,4 +39,5 @@ export {
   type ReasoningPart,
   type ToolCallPart,
   type ToolResultPart,
+  type FilePart,
 } from './messages.js'

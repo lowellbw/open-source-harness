@@ -29,7 +29,9 @@ export function ConnectorPanel(props: { sessionId: string }) {
   const [busy, setBusy] = useState(false)
 
   const refresh = useCallback(async () => {
-    const res = await fetch(`/api/mcp?sessionId=${props.sessionId}`)
+    // No thread, no session to bring connectors up against.
+    if (!props.sessionId) return
+    const res = await fetch(`/api/mcp?sessionId=${encodeURIComponent(props.sessionId)}`)
     if (res.ok) setStatus(await res.json())
   }, [props.sessionId])
 

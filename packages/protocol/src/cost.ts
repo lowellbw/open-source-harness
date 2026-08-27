@@ -21,6 +21,17 @@ export const costBucketsSchema = z.object({
    * never added to outputTokens when pricing, or reasoning models bill twice.
    */
   reasoningTokens: z.number().int().nonnegative(),
+  /**
+   * Server-side web searches, counted rather than measured in tokens.
+   *
+   * Not a token bucket, but billed alongside them and at a rate that dwarfs
+   * them: a single search runs $0.005-$0.01, which is more than a whole
+   * cheap-tier turn. Leaving it out would make the meter quietly wrong in the
+   * direction that matters, understating exactly the feature people use most.
+   *
+   * Defaulted so cost rows written before this bucket existed still parse.
+   */
+  webSearches: z.number().int().nonnegative().default(0),
   usd: z.number().nonnegative(),
 })
 
@@ -32,6 +43,7 @@ export const zeroCost: CostBuckets = {
   cacheReadTokens: 0,
   outputTokens: 0,
   reasoningTokens: 0,
+  webSearches: 0,
   usd: 0,
 }
 
@@ -42,6 +54,7 @@ export function addCost(a: CostBuckets, b: CostBuckets): CostBuckets {
     cacheReadTokens: a.cacheReadTokens + b.cacheReadTokens,
     outputTokens: a.outputTokens + b.outputTokens,
     reasoningTokens: a.reasoningTokens + b.reasoningTokens,
+    webSearches: a.webSearches + b.webSearches,
     usd: a.usd + b.usd,
   }
 }
@@ -54,6 +67,11 @@ export const modelRatesSchema = z.object({
   cacheWriteMultiplier: z.number().nonnegative().default(1.25),
   /** Multiplier on input rate for reading from cache. Typically 0.1. */
   cacheReadMultiplier: z.number().nonnegative().default(0.1),
+  /**
+   * USD per server-side web search. Brave's own API is $0.005; the hosted tools
+   * that resell it run $0.004-$0.01.
+   */
+  webSearchPerCall: z.number().nonnegative().default(0.005),
 })
 
 export type ModelRates = z.infer<typeof modelRatesSchema>
@@ -73,7 +91,8 @@ export function priceUsage(
     usage.uncachedInputTokens * perInputToken +
     usage.cacheWriteTokens * perInputToken * rates.cacheWriteMultiplier +
     usage.cacheReadTokens * perInputToken * rates.cacheReadMultiplier +
-    usage.outputTokens * perOutputToken
+    usage.outputTokens * perOutputToken +
+    usage.webSearches * rates.webSearchPerCall
 
   return { ...usage, usd }
 }

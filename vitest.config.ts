@@ -14,6 +14,10 @@ export default defineConfig({
       '@workspace/gateway-model': src('gateway-model'),
       '@workspace/core': src('core'),
       '@workspace/mcp': src('mcp'),
+      '@workspace/session': src('session'),
+      '@workspace/store': src('store'),
+      '@workspace/subagents': src('subagents'),
+      '@workspace/documents': src('documents'),
     },
   },
   test: {

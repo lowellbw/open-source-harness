@@ -1,3 +1,0 @@
-module.exports=[28992,a=>{"use strict";var b=a.i(67830);a.s(["default",0,function({children:a}){return(0,b.jsx)("html",{lang:"en",children:(0,b.jsx)("body",{className:"h-dvh overflow-hidden",children:a})})},"metadata",0,{title:"Agentic Workspace",description:"An agent workspace with your files, your tools and your choice of model."}])},44665,function(a){a.n(a.i(28992))}];
-
-//# sourceMappingURL=apps_web_app_layout_tsx_1u5ig43._.js.map

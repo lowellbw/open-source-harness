@@ -81,6 +81,9 @@ describe('usage mapping', () => {
       cacheWriteTokens: 100,
       outputTokens: 500,
       reasoningTokens: 100,
+      // Usage accounting has no field for server tool calls; the agent counts
+      // them off the tool stream instead.
+      webSearches: 0,
     })
   })
 
